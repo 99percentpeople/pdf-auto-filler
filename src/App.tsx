@@ -367,29 +367,34 @@ const App: Component = () => {
                 <div class="flex gap-1 items-end">
                   <label class="w-full max-w-xs grid gap-1.5">
                     <p class="text-sm font-medium disabled-next">Custom Font</p>
-                    <Input
-                      type="file"
-                      accept=".ttf,.otf,.woff,.woff2"
-                      disabled={loading()}
-                      onChange={async (e) => {
-                        setIsloading(true);
-                        const file = e.currentTarget.files?.item(0);
-                        if (!file) {
-                          setIsloading(false);
-                          return;
-                        }
+                    <div class="flex gap-1.5">
+                      <Input
+                        type="file"
+                        accept=".ttf,.otf,.woff,.woff2"
+                        disabled={loading()}
+                        onChange={async (e) => {
+                          setIsloading(true);
+                          const file = e.currentTarget.files?.item(0);
+                          if (!file) {
+                            setIsloading(false);
+                            return;
+                          }
 
-                        setCustomFontFile(file);
-                        setIsloading(false);
-                      }}
-                    />
+                          setCustomFontFile(file);
+                          setIsloading(false);
+                        }}
+                      />
+                      <Button
+                        disabled={!customFontFile()}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          setCustomFontFile(null);
+                        }}
+                      >
+                        Remove
+                      </Button>
+                    </div>
                   </label>
-                  <Button
-                    disabled={!customFontFile()}
-                    onClick={() => setCustomFontFile(null)}
-                  >
-                    Remove
-                  </Button>
                 </div>
                 <Show when={customFontFile()}>
                   {(font) => (
@@ -409,8 +414,8 @@ const App: Component = () => {
                 disabled={!info.rangeEnable}
               >
                 <NumberFieldLabel>Start Index</NumberFieldLabel>
-                <div class="flex gap-1">
-                  <NumberFieldGroup>
+                <div class="flex w-full gap-1">
+                  <NumberFieldGroup class="flex-1">
                     <NumberFieldDecrementTrigger aria-label="Decrement" />
                     <NumberFieldInput />
                     <NumberFieldIncrementTrigger aria-label="Increment" />
@@ -435,8 +440,8 @@ const App: Component = () => {
                 disabled={!info.rangeEnable}
               >
                 <NumberFieldLabel>End Index</NumberFieldLabel>
-                <div class="flex gap-1">
-                  <NumberFieldGroup>
+                <div class="flex w-full gap-1">
+                  <NumberFieldGroup class="flex-1">
                     <NumberFieldDecrementTrigger aria-label="Decrement" />
                     <NumberFieldInput />
                     <NumberFieldIncrementTrigger aria-label="Increment" />
