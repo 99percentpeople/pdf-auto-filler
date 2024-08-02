@@ -454,6 +454,7 @@ const App: Component = () => {
                   fllow the column name
                 </p>
                 <Select
+                  fitViewport
                   placeholder="None"
                   disabled={!info.selectColumnEnable}
                   optionValue="value"
@@ -480,7 +481,13 @@ const App: Component = () => {
                       {(state) => state.selectedOption().name}
                     </SelectValue>
                   </SelectTrigger>
-                  <SelectContent />
+                  <SelectContent
+                    class="overflow-y-auto"
+                    style={{
+                      "max-height": "var(--kb-popper-content-available-height)",
+                      "max-width": "var(--kb-popper-content-available-width)",
+                    }}
+                  />
                 </Select>
               </label>
             </div>
