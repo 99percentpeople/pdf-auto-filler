@@ -11,17 +11,33 @@
   "license": "MIT",
   "devDependencies": {
     "@types/node": "^22.0.0",
+    "@types/wicg-file-system-access": "^2023.10.5",
     "solid-devtools": "^0.29.2",
     "tailwindcss": "^3.4.7",
     "typescript": "^5.3.3",
     "vite": "^5.0.11",
+    "vite-plugin-arraybuffer": "^0.0.8",
     "vite-plugin-singlefile": "^2.0.2",
     "vite-plugin-solid": "^2.8.2"
   },
   "dependencies": {
+    "@ark-ui/solid": "^3.6.2",
+    "@corvu/resizable": "^0.2.3",
+    "@fontsource/noto-sans": "^5.0.22",
+    "@kobalte/core": "^0.13.4",
+    "@pdf-lib/fontkit": "^1.1.1",
+    "@solid-primitives/storage": "^3.8.0",
+    "@tanstack/solid-virtual": "^3.8.4",
+    "class-variance-authority": "^0.7.0",
+    "clsx": "^2.1.1",
+    "idb-keyval": "^6.2.1",
+    "install": "^0.13.0",
     "jszip": "^3.10.1",
+    "npm": "^10.8.2",
     "pdf-lib": "^1.17.1",
     "solid-js": "^1.8.11",
+    "tailwind-merge": "^2.4.0",
+    "tailwindcss-animate": "^1.0.7",
     "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   }
 }
