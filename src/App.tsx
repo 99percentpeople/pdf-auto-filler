@@ -1,7 +1,6 @@
 import {
   batch,
   createEffect,
-  createMemo,
   createSignal,
   For,
   onMount,
@@ -13,11 +12,8 @@ import "./App.css";
 import {
   degrees,
   drawImage,
-  drawRectangle,
-  PDFBool,
   PDFButton,
   PDFCheckBox,
-  PDFContentStream,
   PDFDocument,
   PDFDropdown,
   PDFField,
@@ -27,10 +23,9 @@ import {
   PDFRadioGroup,
   PDFSignature,
   PDFTextField,
-  rgb,
 } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
-import { read, utils, WorkSheet } from "xlsx";
+import { read, utils } from "xlsx";
 import { optional } from "./helper";
 
 import { Button } from "@/components/ui/button";
@@ -185,7 +180,7 @@ const App: Component = () => {
       try {
         if (await verifyPermission(workDirHandle, true))
           console.log(
-            `Directory is loaded, current permission state is granted`,
+            `Work directory is loaded, current permission state is granted`,
           );
         else throw Error(`verifyPermission failed`);
         setAppData("workDir", workDirHandle);
@@ -204,7 +199,7 @@ const App: Component = () => {
       try {
         if (await verifyPermission(imgDirHandle, false))
           console.log(
-            `Directory is loaded, current permission state is granted`,
+            `Image directory is loaded, current permission state is granted`,
           );
         else throw Error(`verifyPermission failed`);
         setAppData("imgDir", imgDirHandle);
@@ -692,6 +687,7 @@ const App: Component = () => {
                 Work Directory
               </p>
               <Button
+                draggable="true"
                 disabled={info.loading}
                 onClick={loadingWrapper(async () => {
                   try {
@@ -707,6 +703,36 @@ const App: Component = () => {
                     setAppData("workDir", handle);
                   } catch (err) {
                     console.warn((err as Error).message);
+                  }
+                })}
+                onDragOver={(ev) => {
+                  ev.preventDefault();
+                }}
+                onDrop={loadingWrapper(async (ev) => {
+                  ev.preventDefault();
+                  if (!ev.dataTransfer) return;
+                  for (const item of ev.dataTransfer
+                    .items) {
+                    if (item.kind !== "file") continue;
+                    const handle =
+                      await item.getAsFileSystemHandle();
+                    if (handle?.kind !== "directory")
+                      continue;
+                    const dirHandle =
+                      handle as FileSystemDirectoryHandle;
+                    if (
+                      await verifyPermission(
+                        dirHandle,
+                        true,
+                      )
+                    ) {
+                      console.log(
+                        "drop work directory: ",
+                        handle.name,
+                      );
+                      setAppData("workDir", dirHandle);
+                      break;
+                    }
                   }
                 })}
               >
@@ -741,6 +767,7 @@ const App: Component = () => {
                 Image Directory
               </p>
               <Button
+                draggable="true"
                 disabled={info.loading}
                 onClick={loadingWrapper(async (ev) => {
                   try {
@@ -756,6 +783,36 @@ const App: Component = () => {
                     setAppData("imgDir", handle);
                   } catch (err) {
                     console.warn((err as Error).message);
+                  }
+                })}
+                onDragOver={(ev) => {
+                  ev.preventDefault();
+                }}
+                onDrop={loadingWrapper(async (ev) => {
+                  ev.preventDefault();
+                  if (!ev.dataTransfer) return;
+                  for (const item of ev.dataTransfer
+                    .items) {
+                    if (item.kind !== "file") continue;
+                    const handle =
+                      await item.getAsFileSystemHandle();
+                    if (handle?.kind !== "directory")
+                      continue;
+                    const dirHandle =
+                      handle as FileSystemDirectoryHandle;
+                    if (
+                      await verifyPermission(
+                        dirHandle,
+                        false,
+                      )
+                    ) {
+                      console.log(
+                        "drop image directory: ",
+                        handle.name,
+                      );
+                      setAppData("imgDir", dirHandle);
+                      break;
+                    }
                   }
                 })}
               >
@@ -1040,12 +1097,17 @@ const App: Component = () => {
             <Show when={info.loading}>
               <h1 class="h3">Loading</h1>
             </Show>
-
-            <Show when={BUILD_DATE}>
-              {(bd) => (
-                <p class="muted mt-auto">{`Build Date: ${bd()}`}</p>
-              )}
-            </Show>
+            <div class="mt-auto">
+              <Show when={BUILD_DATE}>
+                {(bd) => (
+                  <p class="muted">{`Build Date: ${bd()}`}</p>
+                )}
+              </Show>
+              <p class="small muted">
+                This app can only be used in Chrome or Edge
+                after version 86, Opera after version 72.
+              </p>
+            </div>
           </div>
         </ResizablePanel>
       </Resizable>
