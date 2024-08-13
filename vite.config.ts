@@ -4,6 +4,7 @@ import solidPlugin from "vite-plugin-solid";
 import { viteSingleFile } from "vite-plugin-singlefile";
 import { resolve } from "path";
 import arraybuffer from "vite-plugin-arraybuffer";
+import { compression } from "vite-plugin-compression2";
 export default defineConfig({
   plugins: [
     /* 
@@ -16,6 +17,7 @@ export default defineConfig({
       removeViteModuleLoader: true,
     }),
     arraybuffer(),
+    compression(),
   ],
   server: {
     port: 3000,

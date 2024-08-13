@@ -11,9 +11,18 @@ importers:
       '@ark-ui/solid':
         specifier: ^3.6.2
         version: 3.6.2(solid-js@1.8.19)
+      '@corvu/drawer':
+        specifier: ^0.2.2
+        version: 0.2.2(solid-js@1.8.19)
       '@corvu/resizable':
         specifier: ^0.2.3
         version: 0.2.3(solid-js@1.8.19)
+      '@fontsource-variable/inter':
+        specifier: ^5.0.20
+        version: 5.0.20
+      '@fontsource-variable/roboto-mono':
+        specifier: ^5.0.19
+        version: 5.0.19
       '@fontsource/noto-sans':
         specifier: ^5.0.22
         version: 5.0.22
@@ -44,6 +53,12 @@ importers:
       jszip:
         specifier: ^3.10.1
         version: 3.10.1
+      localforage:
+        specifier: ^1.10.0
+        version: 1.10.0
+      lucide-solid:
+        specifier: ^0.427.0
+        version: 0.427.0(solid-js@1.8.19)
       npm:
         specifier: ^10.8.2
         version: 10.8.2
@@ -69,6 +84,15 @@ importers:
       '@types/wicg-file-system-access':
         specifier: ^2023.10.5
         version: 2023.10.5
+      prettier-plugin-classnames:
+        specifier: ^0.7.1
+        version: 0.7.1(prettier@3.3.3)
+      prettier-plugin-merge:
+        specifier: ^0.7.0
+        version: 0.7.0(prettier@3.3.3)
+      prettier-plugin-tailwindcss:
+        specifier: ^0.6.6
+        version: 0.6.6(prettier@3.3.3)
       solid-devtools:
         specifier: ^0.29.2
         version: 0.29.3(solid-js@1.8.19)(vite@5.3.5(@types/node@22.0.2))
@@ -84,6 +108,9 @@ importers:
       vite-plugin-arraybuffer:
         specifier: ^0.0.8
         version: 0.0.8
+      vite-plugin-compression2:
+        specifier: ^1.1.3
+        version: 1.1.3(rollup@4.19.1)
       vite-plugin-singlefile:
         specifier: ^2.0.2
         version: 2.0.2(rollup@4.19.1)(vite@5.3.5(@types/node@22.0.2))
@@ -196,6 +223,16 @@ packages:
   '@babel/types@7.25.2':
     resolution: {integrity: sha512-YTnYtra7W9e6/oAZEHj0bJehPRUlLH9/fbpT5LfB0NhQXyALCRkRs3zH9v07IYhkgpqX6Z78FnuccZr/l4Fs4Q==}
     engines: {node: '>=6.9.0'}
+
+  '@corvu/dialog@0.2.2':
+    resolution: {integrity: sha512-5EzXC7JLy9r/6f2TBGXTLIKBFAmnRyJShPTpACWNbDy2GmZFVXLxGQ26+zRrgFvC+6DVJUwomrJsQvXnmCAa5Q==}
+    peerDependencies:
+      solid-js: ^1.8
+
+  '@corvu/drawer@0.2.2':
+    resolution: {integrity: sha512-gj0dGnAc5fxoOe1E55uo8LPrHFxR+MaStn3UB8I1ZbtlJeeLDTK40uCc/Ee9xVxYpYNpUDX6ICGr3i23bsZyOA==}
+    peerDependencies:
+      solid-js: ^1.8
 
   '@corvu/resizable@0.2.3':
     resolution: {integrity: sha512-UwpObxqKlx1mc3G496Daz9NjK25Gx1V5fB8zIGazbq5tJs7aU8RjPW4png5OoNpMyxV7GQWjQtVc59zaAEVAJg==}
@@ -359,6 +396,12 @@ packages:
   '@floating-ui/utils@0.2.5':
     resolution: {integrity: sha512-sTcG+QZ6fdEUObICavU+aB3Mp8HY4n14wYHdxK4fXjPmv3PXZZeY5RaguJmGyeH/CJQhX3fqKUtS4qc1LoHwhQ==}
 
+  '@fontsource-variable/inter@5.0.20':
+    resolution: {integrity: sha512-dhzG4Zls/tIrf8h0FhTNi8jT/uFwNhdTY2vKe6DYqoXDYOfEcTVZDyh1hKml1rlLT44Y7OoKoGz8w7czDW7twQ==}
+
+  '@fontsource-variable/roboto-mono@5.0.19':
+    resolution: {integrity: sha512-EGHx+Av6qNZf1XUM69eE1dwG3vtZHTpRETlkgt9BoRcN0T9xG+Boo/TzznmhI40CLI1zwBjmglEIu2qNI462Vw==}
+
   '@fontsource/noto-sans@5.0.22':
     resolution: {integrity: sha512-PwjvKPGFbgpwfKjWZj1zeUvd7ExUW2AqHE9PF9ysAJ2gOuzIHWE6mEVIlchYif7WC2pQhn+g0w6xooCObVi+4A==}
 
@@ -427,6 +470,15 @@ packages:
   '@pkgjs/parseargs@0.11.0':
     resolution: {integrity: sha512-+1VkjdD0QBLPodGrJUeqarH8VAIvQODIbwh9XpP5Syisf7YoQgsJKPNFoqqLQlu+VQ/tVSshMR6loPMn8U+dPg==}
     engines: {node: '>=14'}
+
+  '@rollup/pluginutils@5.1.0':
+    resolution: {integrity: sha512-XTIWOPPcpvyKI6L1NHo0lFlCyznUEyPmPY1mc3KpPVDYulHSTvyeLNVW00QTLIAFNhR3kYnJTQHeGqU4M3n09g==}
+    engines: {node: '>=14.0.0'}
+    peerDependencies:
+      rollup: ^1.20.0||^2.0.0||^3.0.0||^4.0.0
+    peerDependenciesMeta:
+      rollup:
+        optional: true
 
   '@rollup/rollup-android-arm-eabi@4.19.1':
     resolution: {integrity: sha512-XzqSg714++M+FXhHfXpS1tDnNZNpgxxuGZWlRG/jSj+VEPmZ0yg6jV4E0AL3uyBKxO8mO3xtOsP5mQ+XLfrlww==}
@@ -555,6 +607,11 @@ packages:
 
   '@solid-primitives/media@2.2.9':
     resolution: {integrity: sha512-QUmU62D4/d9YWx/4Dvr/UZasIkIpqNXz7wosA5GLmesRW9XlPa3G5M6uOmTw73SByHNTCw0D6x8bSdtvvLgzvQ==}
+    peerDependencies:
+      solid-js: ^1.6.12
+
+  '@solid-primitives/memo@1.3.9':
+    resolution: {integrity: sha512-OIlGcsEPXr6U23fDaSEm8iqezWDT4SNSjLTekWQVOu4qHostnMPlqU8xo1Jf0I7OgRuqA0wTMQ5cu0bYjeR/ZQ==}
     peerDependencies:
       solid-js: ^1.6.12
 
@@ -979,6 +1036,10 @@ packages:
   didyoumean@1.2.2:
     resolution: {integrity: sha512-gxtyfqMg7GKyhQmb056K7M3xszy/myH8w+B4RT+QXBQsvAOdc3XymqDDPHx1BgPgsdAA5SIifona89YtRATDzw==}
 
+  diff@5.1.0:
+    resolution: {integrity: sha512-D+mk+qE8VC/PAUrlAU34N+VfXev0ghe5ywmpqrawphmVZc1bEfn56uo9qpyGp1p4xpzOHkSW4ztBd6L7Xx4ACw==}
+    engines: {node: '>=0.3.1'}
+
   dlv@1.1.3:
     resolution: {integrity: sha512-+HlytyjlPKnIG8XuRG8WvmBP8xs8P71y+SKKS6ZXWoEgLuePxtDoUEiH7WkdePWrQ5JBpE6aoVqfZfJUQkjXwA==}
 
@@ -1006,6 +1067,9 @@ packages:
   escape-string-regexp@1.0.5:
     resolution: {integrity: sha512-vbRorB5FUQWvla16U8R/qgaFIya2qGzwDrNmCZuYKrbdSUMG6I1ZCGQRefkRVhuOkIGVne7BQ35DSfo1qvJqFg==}
     engines: {node: '>=0.8.0'}
+
+  estree-walker@2.0.2:
+    resolution: {integrity: sha512-Rfkk/Mp/DL7JVje3u18FxFujQlTNR2q6QfMSMB7AvCBx91NGj/ba3kCfza0f6dVDbw7YlRf/nDrn7pQrCCyQ/w==}
 
   fast-glob@3.3.2:
     resolution: {integrity: sha512-oX2ruAFQwf/Orj8m737Y5adxDQO0LAB7/S5MnxCdTNDd4p6BsyIVsv9JQsATbTSq8KHRpLwIHbVlUNatxd+1Ow==}
@@ -1138,6 +1202,9 @@ packages:
     resolution: {integrity: sha512-dhG34DXATL5hSxJbIexCft8FChFXtmskoZYnoPWjXQuebWYCNkVeV3KkGegCK9CP1oswI/vQibS2GY7Em/sJJA==}
     engines: {node: '>= 8'}
 
+  lie@3.1.1:
+    resolution: {integrity: sha512-RiNhHysUjhrDQntfYSfY4MU24coXXdEOgw9WGcKHNeEwffDYbF//u87M1EWaMGzuFoSbqW0C9C6lEEhDOAswfw==}
+
   lie@3.3.0:
     resolution: {integrity: sha512-UaiMJzeWRlEujzAuw5LokY1L5ecNQYZKfmyZ9L7wDHb/p5etKaxXhohBcrw0EYby+G/NA52vRSN4N39dxHAIwQ==}
 
@@ -1152,11 +1219,19 @@ packages:
   lines-and-columns@1.2.4:
     resolution: {integrity: sha512-7ylylesZQ/PV29jhEDl3Ufjo6ZX7gCqJr5F7PKrqc93v7fzSymt1BpwEU8nAUXs8qzzvqhbjhK5QZg6Mt/HkBg==}
 
+  localforage@1.10.0:
+    resolution: {integrity: sha512-14/H1aX7hzBBmmh7sGPd+AOMkkIrHM3Z1PAyGgZigA1H1p5O5ANnMyWzvpAETtG68/dC4pC0ncy3+PPGzXZHPg==}
+
   lru-cache@10.4.3:
     resolution: {integrity: sha512-JNAzZcXrCt42VGLuYz0zfAzDfAvJWW6AfYlDBQyDV5DClI2m5sAmK+OIO7s59XfsRsWHp02jAJrRadPRGTt6SQ==}
 
   lru-cache@5.1.1:
     resolution: {integrity: sha512-KpNARQA3Iwv+jTA0utUVVbrh+Jlrr1Fv0e56GGzAFOXN7dk/FviaDW8LHmK52DlcH4WP2n6gI8vN1aesBFgo9w==}
+
+  lucide-solid@0.427.0:
+    resolution: {integrity: sha512-bP5/05EEugz2fPdNOYV5vuHBSEn408GiXXovM7Dy/NVtuTobkm8at6nOYkZYLuLm/+/0wwyWYYZbeLuzRSupjA==}
+    peerDependencies:
+      solid-js: ^1.4.7
 
   merge-anything@5.1.7:
     resolution: {integrity: sha512-eRtbOb1N5iyH0tkQDAoQ4Ipsp/5qSR79Dzrz8hEPxRX10RWWR/iQXdoKmBSRCThY1Fh5EhISDtpSc93fpxUniQ==}
@@ -1357,6 +1432,85 @@ packages:
     resolution: {integrity: sha512-YF2kKIUzAofPMpfH6hOi2cGnv/HrUlfucspc7pDyvv7kGdqXrfj8SCl/t8owkEgKEuu8ZcRjSOxFxVLqwChZ2Q==}
     engines: {node: ^10 || ^12 || >=14}
 
+  prettier-plugin-classnames@0.7.1:
+    resolution: {integrity: sha512-Waux2tu4Cc9BtP5BhFhWR3pZCzL8nzWEdmQAbx2La2i1EI8XTgv/iOvQmuLz3Ufix31967eWteeAf6CYaZ58ig==}
+    engines: {node: '>=14'}
+    peerDependencies:
+      prettier: ^2 || ^3
+      prettier-plugin-astro: '*'
+      prettier-plugin-svelte: '*'
+    peerDependenciesMeta:
+      prettier-plugin-astro:
+        optional: true
+      prettier-plugin-svelte:
+        optional: true
+
+  prettier-plugin-merge@0.7.0:
+    resolution: {integrity: sha512-DfLjkEg6Cdm+1kbudiuOf5B3xFCjQuMCF76PWvv95erzmPQNOsTdsz0O6fgc5CdNtWED/lBitemfBlufqJVqUw==}
+    engines: {node: '>=14'}
+    peerDependencies:
+      prettier: ^2 || ^3
+
+  prettier-plugin-tailwindcss@0.6.6:
+    resolution: {integrity: sha512-OPva5S7WAsPLEsOuOWXATi13QrCKACCiIonFgIR6V4lYv4QLp++UXVhZSzRbZxXGimkQtQT86CC6fQqTOybGng==}
+    engines: {node: '>=14.21.3'}
+    peerDependencies:
+      '@ianvs/prettier-plugin-sort-imports': '*'
+      '@prettier/plugin-pug': '*'
+      '@shopify/prettier-plugin-liquid': '*'
+      '@trivago/prettier-plugin-sort-imports': '*'
+      '@zackad/prettier-plugin-twig-melody': '*'
+      prettier: ^3.0
+      prettier-plugin-astro: '*'
+      prettier-plugin-css-order: '*'
+      prettier-plugin-import-sort: '*'
+      prettier-plugin-jsdoc: '*'
+      prettier-plugin-marko: '*'
+      prettier-plugin-multiline-arrays: '*'
+      prettier-plugin-organize-attributes: '*'
+      prettier-plugin-organize-imports: '*'
+      prettier-plugin-sort-imports: '*'
+      prettier-plugin-style-order: '*'
+      prettier-plugin-svelte: '*'
+    peerDependenciesMeta:
+      '@ianvs/prettier-plugin-sort-imports':
+        optional: true
+      '@prettier/plugin-pug':
+        optional: true
+      '@shopify/prettier-plugin-liquid':
+        optional: true
+      '@trivago/prettier-plugin-sort-imports':
+        optional: true
+      '@zackad/prettier-plugin-twig-melody':
+        optional: true
+      prettier-plugin-astro:
+        optional: true
+      prettier-plugin-css-order:
+        optional: true
+      prettier-plugin-import-sort:
+        optional: true
+      prettier-plugin-jsdoc:
+        optional: true
+      prettier-plugin-marko:
+        optional: true
+      prettier-plugin-multiline-arrays:
+        optional: true
+      prettier-plugin-organize-attributes:
+        optional: true
+      prettier-plugin-organize-imports:
+        optional: true
+      prettier-plugin-sort-imports:
+        optional: true
+      prettier-plugin-style-order:
+        optional: true
+      prettier-plugin-svelte:
+        optional: true
+
+  prettier@3.3.3:
+    resolution: {integrity: sha512-i2tDNA0O5IrMO757lfrdQZCc2jPNDVntV0m/+4whiDfWaTKfMNgR7Qz0NAeGz/nRqF4m5/6CLzbP4/liHt12Ew==}
+    engines: {node: '>=14'}
+    hasBin: true
+
   process-nextick-args@2.0.1:
     resolution: {integrity: sha512-3ouUOpQhtgrbOa17J7+uxOTpITYWaGP7/AhoR3+A+/1e9skrzelGi/dXzEYyvbxubEF6Wn2ypscTKiKJFFn1ag==}
 
@@ -1439,11 +1593,26 @@ packages:
       vite:
         optional: true
 
+  solid-dismissible@0.1.0:
+    resolution: {integrity: sha512-tgIYWdtdAiuv6k4t/ozB1ZDS7D0q38QQFcjaeemQihpYT5Rb0tXgr/AbJ2e0+mxK4sODv3GZpva7HMoq2X5sTA==}
+    peerDependencies:
+      solid-js: ^1.8
+
+  solid-focus-trap@0.1.7:
+    resolution: {integrity: sha512-NSJiIkL+WTWGgca+OKQA9rV3bD51lT23iLn1Z+Ap1Qk3rJBxQ8SoEAQ0FvXoQThtyXFKAK1ibcVBBMMEcu6YMw==}
+    peerDependencies:
+      solid-js: ^1.8
+
   solid-js@1.8.19:
     resolution: {integrity: sha512-h8z/TvTQYsf894LM9Iau/ZW2iAKrCzAWDwjPhMcXnonmW1OIIihc28wp82b1wwei1p81fH5+gnfNOe8RzLbDRQ==}
 
   solid-presence@0.1.7:
     resolution: {integrity: sha512-786JcN2PFCSKKOIQ7Zg0GZuy2vmtF8b78WZDbOIzzVOCcZF/ovZTCZOY11lUYiKqPCXxeLxh8kBLoFF1X42i9w==}
+    peerDependencies:
+      solid-js: ^1.8
+
+  solid-presence@0.1.8:
+    resolution: {integrity: sha512-pWGtXUFWYYUZNbg5YpG5vkQJyOtzn2KXhxYaMx/4I+lylTLYkITOLevaCwMRN+liCVk0pqB6EayLWojNqBFECA==}
     peerDependencies:
       solid-js: ^1.8
 
@@ -1456,6 +1625,11 @@ packages:
     resolution: {integrity: sha512-F3aPsX6hVw9ttm5LYlth8Q15x6MlI/J3Dn+o3EQyRTtTxidepSTwAYdozt01/YA+7ObcciagGEyXIopGZzQtbA==}
     peerDependencies:
       solid-js: ^1.3
+
+  solid-transition-size@0.1.4:
+    resolution: {integrity: sha512-ocHVnbfy23CgfaH4cEUR/AFg0Y3CEL8Oh3n9Qv8OHFJgPh+zkmERKZQfi/xH5XvxDCizg8VjPrVUhiHB1Gza8g==}
+    peerDependencies:
+      solid-js: ^1.8
 
   source-map-js@1.2.0:
     resolution: {integrity: sha512-itJW8lvSA0TXEphiRoawsCksnlf8SyvmFzIhltqAHluXd88pkCd+cXJVHTDwdCr0IzwptSm035IHQktUu1QUMg==}
@@ -1558,6 +1732,9 @@ packages:
 
   vite-plugin-arraybuffer@0.0.8:
     resolution: {integrity: sha512-F+InDQuxd93YDVRdXTjBr3lydgjyVHSpgRZS4izK/i85Anl5kmbvf2NwJ//XHAccHh1TScfX70MFJfBx/rf3cg==}
+
+  vite-plugin-compression2@1.1.3:
+    resolution: {integrity: sha512-I5XVfEdGY9ZQqRjGRS/sokKofapH7FKHRyrAulMqDyGaOgWqrABGS6eyWsKwWLPKv13cvz/a1F5z9yY3a3uIkw==}
 
   vite-plugin-singlefile@2.0.2:
     resolution: {integrity: sha512-Z2ou6HcvED5CF0hM+vcFSaFa+klyS8RyyLxW0PbMRLnMbvzTI6ueWyxdYNFhpuXZgz/aj6+E/dHFTdEcw6gb9w==}
@@ -1822,6 +1999,23 @@ snapshots:
       '@babel/helper-validator-identifier': 7.24.7
       to-fast-properties: 2.0.0
 
+  '@corvu/dialog@0.2.2(solid-js@1.8.19)':
+    dependencies:
+      '@corvu/utils': 0.4.0(solid-js@1.8.19)
+      solid-dismissible: 0.1.0(solid-js@1.8.19)
+      solid-focus-trap: 0.1.7(solid-js@1.8.19)
+      solid-js: 1.8.19
+      solid-presence: 0.1.8(solid-js@1.8.19)
+      solid-prevent-scroll: 0.1.9(solid-js@1.8.19)
+
+  '@corvu/drawer@0.2.2(solid-js@1.8.19)':
+    dependencies:
+      '@corvu/dialog': 0.2.2(solid-js@1.8.19)
+      '@corvu/utils': 0.3.2(solid-js@1.8.19)
+      '@solid-primitives/memo': 1.3.9(solid-js@1.8.19)
+      solid-js: 1.8.19
+      solid-transition-size: 0.1.4(solid-js@1.8.19)
+
   '@corvu/resizable@0.2.3(solid-js@1.8.19)':
     dependencies:
       '@corvu/utils': 0.4.0(solid-js@1.8.19)
@@ -1917,6 +2111,10 @@ snapshots:
 
   '@floating-ui/utils@0.2.5': {}
 
+  '@fontsource-variable/inter@5.0.20': {}
+
+  '@fontsource-variable/roboto-mono@5.0.19': {}
+
   '@fontsource/noto-sans@5.0.22': {}
 
   '@internationalized/date@3.5.5':
@@ -2003,6 +2201,14 @@ snapshots:
 
   '@pkgjs/parseargs@0.11.0':
     optional: true
+
+  '@rollup/pluginutils@5.1.0(rollup@4.19.1)':
+    dependencies:
+      '@types/estree': 1.0.5
+      estree-walker: 2.0.2
+      picomatch: 2.3.1
+    optionalDependencies:
+      rollup: 4.19.1
 
   '@rollup/rollup-android-arm-eabi@4.19.1':
     optional: true
@@ -2125,6 +2331,12 @@ snapshots:
       '@solid-primitives/event-listener': 2.3.3(solid-js@1.8.19)
       '@solid-primitives/rootless': 1.4.5(solid-js@1.8.19)
       '@solid-primitives/static-store': 0.0.8(solid-js@1.8.19)
+      '@solid-primitives/utils': 6.2.3(solid-js@1.8.19)
+      solid-js: 1.8.19
+
+  '@solid-primitives/memo@1.3.9(solid-js@1.8.19)':
+    dependencies:
+      '@solid-primitives/scheduled': 1.4.3(solid-js@1.8.19)
       '@solid-primitives/utils': 6.2.3(solid-js@1.8.19)
       solid-js: 1.8.19
 
@@ -2813,6 +3025,8 @@ snapshots:
 
   didyoumean@1.2.2: {}
 
+  diff@5.1.0: {}
+
   dlv@1.1.3: {}
 
   eastasianwidth@0.2.0: {}
@@ -2852,6 +3066,8 @@ snapshots:
   escalade@3.1.2: {}
 
   escape-string-regexp@1.0.5: {}
+
+  estree-walker@2.0.2: {}
 
   fast-glob@3.3.2:
     dependencies:
@@ -2967,6 +3183,10 @@ snapshots:
 
   klona@2.0.6: {}
 
+  lie@3.1.1:
+    dependencies:
+      immediate: 3.0.6
+
   lie@3.3.0:
     dependencies:
       immediate: 3.0.6
@@ -2977,11 +3197,19 @@ snapshots:
 
   lines-and-columns@1.2.4: {}
 
+  localforage@1.10.0:
+    dependencies:
+      lie: 3.1.1
+
   lru-cache@10.4.3: {}
 
   lru-cache@5.1.1:
     dependencies:
       yallist: 3.1.1
+
+  lucide-solid@0.427.0(solid-js@1.8.19):
+    dependencies:
+      solid-js: 1.8.19
 
   merge-anything@5.1.7:
     dependencies:
@@ -3087,6 +3315,21 @@ snapshots:
       picocolors: 1.0.1
       source-map-js: 1.2.0
 
+  prettier-plugin-classnames@0.7.1(prettier@3.3.3):
+    dependencies:
+      prettier: 3.3.3
+
+  prettier-plugin-merge@0.7.0(prettier@3.3.3):
+    dependencies:
+      diff: 5.1.0
+      prettier: 3.3.3
+
+  prettier-plugin-tailwindcss@0.6.6(prettier@3.3.3):
+    dependencies:
+      prettier: 3.3.3
+
+  prettier@3.3.3: {}
+
   process-nextick-args@2.0.1: {}
 
   proxy-compare@3.0.0: {}
@@ -3182,6 +3425,16 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
+  solid-dismissible@0.1.0(solid-js@1.8.19):
+    dependencies:
+      '@corvu/utils': 0.4.0(solid-js@1.8.19)
+      solid-js: 1.8.19
+
+  solid-focus-trap@0.1.7(solid-js@1.8.19):
+    dependencies:
+      '@corvu/utils': 0.3.2(solid-js@1.8.19)
+      solid-js: 1.8.19
+
   solid-js@1.8.19:
     dependencies:
       csstype: 3.1.3
@@ -3191,6 +3444,11 @@ snapshots:
   solid-presence@0.1.7(solid-js@1.8.19):
     dependencies:
       '@corvu/utils': 0.3.2(solid-js@1.8.19)
+      solid-js: 1.8.19
+
+  solid-presence@0.1.8(solid-js@1.8.19):
+    dependencies:
+      '@corvu/utils': 0.4.0(solid-js@1.8.19)
       solid-js: 1.8.19
 
   solid-prevent-scroll@0.1.9(solid-js@1.8.19):
@@ -3206,6 +3464,11 @@ snapshots:
       solid-js: 1.8.19
     transitivePeerDependencies:
       - supports-color
+
+  solid-transition-size@0.1.4(solid-js@1.8.19):
+    dependencies:
+      '@corvu/utils': 0.3.2(solid-js@1.8.19)
+      solid-js: 1.8.19
 
   source-map-js@1.2.0: {}
 
@@ -3321,6 +3584,12 @@ snapshots:
   validate-html-nesting@1.2.2: {}
 
   vite-plugin-arraybuffer@0.0.8: {}
+
+  vite-plugin-compression2@1.1.3(rollup@4.19.1):
+    dependencies:
+      '@rollup/pluginutils': 5.1.0(rollup@4.19.1)
+    transitivePeerDependencies:
+      - rollup
 
   vite-plugin-singlefile@2.0.2(rollup@4.19.1)(vite@5.3.5(@types/node@22.0.2)):
     dependencies:

@@ -13,14 +13,20 @@ import { get, set } from "idb-keyval";
 import { Button } from "./components/ui/button";
 import { makePersisted } from "@solid-primitives/storage";
 
-export type FileManageProps = Omit<ComponentProps<"div">, "ref"> & {
+export type FileManageProps = Omit<
+  ComponentProps<"div">,
+  "ref"
+> & {
   ref?: Ref<{}>;
 };
 
 export function FileManage(props: FileManageProps) {
-  const [dirHandle, setDirHandle] = createSignal<FileSystemDirectoryHandle>();
+  const [dirHandle, setDirHandle] =
+    createSignal<FileSystemDirectoryHandle>();
   onMount(async () => {
-    setDirHandle(await get<FileSystemDirectoryHandle>("dir"));
+    setDirHandle(
+      await get<FileSystemDirectoryHandle>("dir"),
+    );
     createEffect(async () => {
       await set("dir", dirHandle());
     });
@@ -38,10 +44,11 @@ export function FileManage(props: FileManageProps) {
       <Button
         onClick={async () => {
           try {
-            const dirHandle = await window.showDirectoryPicker({
-              startIn: "desktop",
-              mode: "readwrite",
-            });
+            const dirHandle =
+              await window.showDirectoryPicker({
+                startIn: "desktop",
+                mode: "readwrite",
+              });
             console.log("Selected directory:", dirHandle);
             setDirHandle(dirHandle);
           } catch (err) {
@@ -52,7 +59,12 @@ export function FileManage(props: FileManageProps) {
         {dirHandle() ? `Change` : `Open`}
       </Button>
       <Show when={dirHandle()}>
-        {(handle) => <FileList handle={handle()} name={handle().name} />}
+        {(handle) => (
+          <FileList
+            handle={handle()}
+            name={handle().name}
+          />
+        )}
       </Show>
     </div>
   );
@@ -66,13 +78,18 @@ export type FileListProps = {
 export function FileList(props: FileListProps) {
   const [files, setFiles] =
     createSignal<
-      [string, FileSystemDirectoryHandle | FileSystemFileHandle][]
+      [
+        string,
+        FileSystemDirectoryHandle | FileSystemFileHandle,
+      ][]
     >();
 
   createEffect(async () => {
     if (props.handle) {
       await props.handle;
-      setFiles(await Array.fromAsync(props.handle.entries()));
+      setFiles(
+        await Array.fromAsync(props.handle.entries()),
+      );
     }
   });
   return (

@@ -1,14 +1,34 @@
 import {
+  batch,
   createEffect,
   createMemo,
   createSignal,
+  For,
   onMount,
   Show,
   type Component,
 } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import "./App.css";
-import { PDFDocument, PDFFont, PDFTextField } from "pdf-lib";
+import {
+  degrees,
+  drawImage,
+  drawRectangle,
+  PDFBool,
+  PDFButton,
+  PDFCheckBox,
+  PDFContentStream,
+  PDFDocument,
+  PDFDropdown,
+  PDFField,
+  PDFFont,
+  PDFImage,
+  PDFOptionList,
+  PDFRadioGroup,
+  PDFSignature,
+  PDFTextField,
+  rgb,
+} from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
 import { read, utils, WorkSheet } from "xlsx";
 import { optional } from "./helper";
@@ -36,7 +56,30 @@ import {
 } from "./components/ui/select";
 import { get, set } from "idb-keyval";
 import { Input } from "./components/extends/input";
-import { Logger } from "./components/Logger";
+import {
+  Logger,
+  LoggerProvider,
+} from "./components/Logger";
+import { ChevronsUpDown, Trash } from "lucide-solid";
+import {
+  Switch,
+  SwitchControl,
+  SwitchLabel,
+  SwitchThumb,
+} from "./components/ui/switch";
+import {
+  Drawer,
+  DrawerContent,
+  DrawerHeader,
+  DrawerLabel,
+  DrawerTrigger,
+} from "./components/ui/drawer";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "./components/ui/collapsible";
+import { CollapsibleTriggerProps } from "@kobalte/core/collapsible";
 
 type Item = {
   value: string;
@@ -46,10 +89,23 @@ type Item = {
 type AppOptions = {
   start?: number;
   end?: number;
-  fileWithColumnName?: string;
+  // 导出文件名
+  exportFileName?: string;
+  // 忽略错误，继续执行
+  skipError?: boolean;
+};
+
+type AppData = {
+  font: File | null;
+  pdf: File | null;
+  fillData: Record<string, string>[] | null;
+  headers: string[] | null;
+  workDir: FileSystemDirectoryHandle | null;
+  imgDir: FileSystemDirectoryHandle | null;
 };
 
 type AppInfo = {
+  loading: boolean;
   uploadEnable: boolean;
   rangeEnable: boolean;
   selectColumnEnable: boolean;
@@ -57,57 +113,110 @@ type AppInfo = {
 };
 
 async function verifyPermission(
-  fileHandle: FileSystemFileHandle | FileSystemDirectoryHandle,
-  withWrite: boolean
+  fileHandle:
+    | FileSystemFileHandle
+    | FileSystemDirectoryHandle,
+  withWrite: boolean,
 ): Promise<boolean> {
   const opts: FileSystemHandlePermissionDescriptor = {};
   if (withWrite) {
     opts.mode = "readwrite";
   }
-
-  // 检查是否已经拥有相应权限，如果是，返回 true。
-  if ((await fileHandle.queryPermission(opts)) === "granted") {
+  if (
+    (await fileHandle.queryPermission(opts)) === "granted"
+  ) {
     return true;
   }
-
-  // 为文件请求权限，如果用户授予了权限，返回 true。
-  if ((await fileHandle.requestPermission(opts)) === "granted") {
+  if (
+    (await fileHandle.requestPermission(opts)) === "granted"
+  ) {
     return true;
   }
-
-  // 用户没有授权，返回 false。
   return false;
 }
 
+function getFieldType(field: PDFField) {
+  if (field instanceof PDFTextField) {
+    return "PDFTextField";
+  } else if (field instanceof PDFSignature) {
+    return "PDFSignature";
+  } else if (field instanceof PDFCheckBox) {
+    return "PDFCheckBox";
+  } else if (field instanceof PDFButton) {
+    return "PDFButton";
+  } else if (field instanceof PDFOptionList) {
+    return "PDFOptionList";
+  } else if (field instanceof PDFRadioGroup) {
+    return "PDFRadioGroup";
+  } else if (field instanceof PDFDropdown) {
+    return "PDFDropdown";
+  } else {
+    return undefined;
+  }
+}
+
 const App: Component = () => {
-  const [loading, setIsloading] = createSignal<boolean>(false);
-  const [sheet, setSheet] = createSignal<WorkSheet | null>(null);
-  const [pdfBuf, setPdfBuf] = createSignal<ArrayBuffer | null>(null);
-  const [customFontFile, setCustomFontFile] = createSignal<File | null>(null);
+  const [appData, setAppData] = createStore<AppData>({
+    font: null,
+    pdf: null,
+    fillData: null,
+    headers: null,
+    workDir: null,
+    imgDir: null,
+  });
+
+  const [customFontFile, setCustomFontFile] =
+    createSignal<File | null>(null);
   const [info, setInfo] = createStore<AppInfo>({
+    loading: false,
     uploadEnable: true,
     rangeEnable: false,
     selectColumnEnable: false,
     generateEnable: false,
   });
-  const [option, setOption] = createStore<AppOptions>({ start: 0 });
-
-  const [dirHandle, setDirHandle] = createSignal<FileSystemDirectoryHandle>();
+  const [option, setOption] = createStore<AppOptions>({
+    start: 0,
+  });
 
   onMount(async () => {
-    const handle = await get<FileSystemDirectoryHandle>("dir");
-    if (handle) {
-      if (await verifyPermission(handle, true)) {
-        console.log(`Directory is loaded, current permission state is granted`);
-      } else {
-        console.error(`verifyPermission failed`);
+    const workDirHandle =
+      await get<FileSystemDirectoryHandle>("work_dir");
+    if (workDirHandle) {
+      try {
+        if (await verifyPermission(workDirHandle, true))
+          console.log(
+            `Directory is loaded, current permission state is granted`,
+          );
+        else throw Error(`verifyPermission failed`);
+        setAppData("workDir", workDirHandle);
+      } catch (err) {
+        console.error((err as Error).message);
       }
-
-      setDirHandle(handle);
     }
+
     createEffect(async () => {
-      await set("dir", dirHandle());
+      await set("work_dir", appData.workDir);
     });
+
+    const imgDirHandle =
+      await get<FileSystemDirectoryHandle>("img_dir");
+    if (imgDirHandle) {
+      try {
+        if (await verifyPermission(imgDirHandle, false))
+          console.log(
+            `Directory is loaded, current permission state is granted`,
+          );
+        else throw Error(`verifyPermission failed`);
+        setAppData("imgDir", imgDirHandle);
+      } catch (err) {
+        console.error((err as Error).message);
+      }
+    }
+
+    createEffect(async () => {
+      await set("img_dir", appData.imgDir);
+    });
+
     const font = await get<File>("font");
     if (font) {
       setCustomFontFile(font);
@@ -115,290 +224,645 @@ const App: Component = () => {
     createEffect(async () => {
       const font = customFontFile();
       await set("font", font);
-      if (font) console.log(`use custom font file: ${font.name}`);
+      if (font)
+        console.log(`use custom font file: ${font.name}`);
     });
   });
 
-  const jsonData = createMemo<Record<string, string>[] | null>(() => {
-    const s = sheet();
-    if (s) {
-      const json = utils.sheet_to_json(s, {
-        raw: false,
-        defval: "",
-        blankrows: false,
-      });
-      console.log("first row of data:", JSON.stringify(json[0], null, 2));
-      return json as Record<string, string>[];
-    } else {
-      return null;
-    }
+  createEffect(() => {
+    const data = appData.fillData;
+    setInfo("rangeEnable", !!data && !info.loading);
+    setInfo("selectColumnEnable", !!data && !info.loading);
   });
 
   createEffect(() => {
-    const data = jsonData();
-    setInfo("rangeEnable", !!data && !loading());
-    setInfo("selectColumnEnable", !!data && !loading());
-  });
-
-  createEffect(() => {
-    const handle = dirHandle();
+    const handle = appData.workDir;
     setInfo(
       "generateEnable",
-      !!handle && !loading() && !!jsonData() && !!pdfBuf()
+      !info.loading &&
+        !!handle &&
+        !!appData.fillData &&
+        !!appData.pdf,
     );
   });
 
-  const headers = createMemo<string[] | null>(() => {
-    const s = sheet();
-    if (s) {
-      const header = [];
-      const columnCount = utils.decode_range(s["!ref"]!).e.c + 1;
-      for (let i = 0; i < columnCount; ++i) {
-        header[i] = s[`${utils.encode_col(i)}1`].v;
+  async function generateFile(
+    data: Record<string, string>,
+    pdfBuf: ArrayBuffer,
+  ) {
+    const pdfDoc = await PDFDocument.load(pdfBuf);
+    const font = customFontFile();
+    const form = pdfDoc.getForm();
+    let customFont: PDFFont | undefined;
+    if (font) {
+      pdfDoc.registerFontkit(fontkit);
+      customFont = await pdfDoc.embedFont(
+        await font.arrayBuffer(),
+        {},
+      );
+      const rawUpdateFieldAppearances =
+        form.updateFieldAppearances.bind(form);
+      form.updateFieldAppearances = function () {
+        return rawUpdateFieldAppearances(customFont);
+      };
+    }
+    for (const field of form.getFields()) {
+      switch (getFieldType(field)) {
+        case "PDFTextField": {
+          const f = field as PDFTextField;
+          const text = data[field.getName()];
+          if (text) {
+            if (text.startsWith("file://")) {
+              const filename = text.replace(
+                /^file:\/\//,
+                "",
+              );
+              console.log(`get file ${filename}`);
+            } else {
+              f.setText(text);
+              console.log(
+                "field",
+                `"${f.getName()}"`,
+                "filling with text",
+                `"${f.getText()}"`,
+              );
+            }
+          }
+          break;
+        }
+        case "PDFSignature": {
+          const sig = field as PDFSignature;
+
+          const text = data[field.getName()];
+          if (text && text.startsWith("file://")) {
+            const filename = text.replace(/^file:\/\//, "");
+            console.log(`trying to get file ${filename}`);
+            if (!appData.imgDir) {
+              console.warn("imgDir not set");
+              if (option.skipError) continue;
+              else break;
+            }
+            const imgHandle =
+              await appData.imgDir?.getFileHandle(filename);
+            if (!imgHandle) {
+              console.warn(
+                `${filename} not found in ${appData.imgDir.name}`,
+              );
+              if (option.skipError) continue;
+              else break;
+            }
+
+            const file = await imgHandle.getFile();
+            let pdfLibSigImg: PDFImage | undefined;
+            if (file.type === "image/jpeg") {
+              pdfLibSigImg = await pdfDoc.embedJpg(
+                await file.arrayBuffer(),
+              );
+            } else if (file.type === "image/png") {
+              pdfLibSigImg = await pdfDoc.embedPng(
+                await file.arrayBuffer(),
+              );
+            }
+
+            if (!pdfLibSigImg) {
+              console.warn(`${file.type} is not support`);
+              if (option.skipError) continue;
+              else break;
+            }
+
+            sig.acroField.getWidgets().forEach((widget) => {
+              console.log(
+                `drawing ${file.name} to field ${field.getName()}`,
+                `Rect: ${JSON.stringify(widget.getRectangle())}`,
+              );
+              const { context } = widget.dict;
+              const { width, height } =
+                widget.getRectangle();
+
+              const appearance = [
+                ...drawImage(filename, {
+                  x: 0,
+                  y: 0,
+                  width: width,
+                  height: height,
+                  rotate: degrees(0),
+                  xSkew: degrees(0),
+                  ySkew: degrees(0),
+                }),
+              ];
+
+              const stream = context.formXObject(
+                appearance,
+                {
+                  Resources: {
+                    XObject: {
+                      [filename]: pdfLibSigImg.ref,
+                    },
+                  },
+                  BBox: context.obj([0, 0, width, height]),
+                  Matrix: context.obj([1, 0, 0, 1, 0, 0]),
+                },
+              );
+              const streamRef = context.register(stream);
+
+              widget.setNormalAppearance(streamRef);
+            });
+          } else {
+            console.warn(
+              `sign ${field.getName()} with text is not supported yet`,
+            );
+          }
+          break;
+        }
       }
-      console.log("xlsx headers:", JSON.stringify(header, null, 2));
-
-      return header;
-    } else {
-      return null;
     }
-  });
 
-  async function selectWorkDir() {
-    try {
-      const handle = await window.showDirectoryPicker({
-        startIn: "documents",
-        mode: "readwrite",
-      });
-      console.log("user select dir name: ", handle.name);
-
-      setDirHandle(handle);
-    } catch (err) {
-      console.warn(err);
-    }
+    const pdfBytes = await pdfDoc.save();
+    return pdfBytes;
   }
 
-  async function* generateFile(
+  async function* generateFiles(
     data: Record<string, string>[],
-    pdfBuf: ArrayBuffer
+    pdfBuf: ArrayBuffer,
   ): AsyncGenerator<[string, Uint8Array]> {
     for (const index in data) {
       const d = data[index];
       let name = `${index}.pdf`;
-      if (option.fileWithColumnName) {
-        name = `${d[option.fileWithColumnName]}.pdf`;
+      if (option.exportFileName) {
+        name = `${d[option.exportFileName]}.pdf`;
       }
       console.log(`start generating file: "${name}"`);
       try {
-        const pdfDoc = await PDFDocument.load(pdfBuf);
-        const font = customFontFile();
-        const form = pdfDoc.getForm();
-        let customFont: PDFFont | undefined;
-        if (font) {
-          pdfDoc.registerFontkit(fontkit);
-          customFont = await pdfDoc.embedFont(await font.arrayBuffer(), {});
-          const rawUpdateFieldAppearances =
-            form.updateFieldAppearances.bind(form);
-          form.updateFieldAppearances = function () {
-            return rawUpdateFieldAppearances(customFont);
-          };
-        }
-        form.getFields().forEach((field) => {
-          if (field instanceof PDFTextField) {
-            const text = d[field.getName()];
-            if (text) {
-              field.setText(text);
-              console.log(
-                "field",
-                `"${field.getName()}"`,
-                "filling with text",
-                `"${field.getText()}"`
-              );
-            }
-          }
-        });
-
-        const pdfBytes = await pdfDoc.save();
-
+        const pdfBytes = await generateFile(d, pdfBuf);
         yield [name, pdfBytes];
       } catch (err: any) {
         console.error(
           `An error occured when generating file: "${name}`,
-          (err as Error).message
+          (err as Error).message,
         );
-        return;
+        if (!option.skipError) {
+          console.warn(
+            "stop generating files due to an error occured.",
+          );
+          return;
+        }
       }
     }
   }
 
-  async function generate() {
-    const buf = pdfBuf();
-    const handle = dirHandle();
-    let data = jsonData();
-    if (!buf || !data || !handle) return;
-    setIsloading(true);
-    // const zip = new JSZip();
-    // const pdfs = zip.folder("pdfs");
-    // if (!pdfs) throw Error("pdfs is null");
+  async function handleGenerate() {
+    setOpen(true);
+    const buf = await appData.pdf?.arrayBuffer();
+    const handle = appData.workDir;
+    let json = appData.fillData;
+    if (!buf || !json || !handle) return;
 
     if (option.start || option.end) {
-      data = data.slice(option.start, option.end);
+      json = json.slice(option.start, option.end);
     }
+    console.info(`start generating ${json.length} files`);
 
-    for await (const [name, bytes] of generateFile(data, buf)) {
+    for await (const [name, bytes] of generateFiles(
+      json,
+      buf,
+    )) {
       try {
-        const fileHandle = await handle.getFileHandle(name, { create: true });
-        const writableStream = await fileHandle.createWritable();
+        const fileHandle = await handle.getFileHandle(
+          name,
+          { create: true },
+        );
+        const writableStream =
+          await fileHandle.createWritable();
         await writableStream.write(bytes);
         await writableStream.close();
-        console.log(`file "${name}" saved to dir "${handle.name}"`);
+        console.log(
+          `file "${name}" saved to dir "${handle.name}"`,
+        );
       } catch (err) {
-        console.log(`An error occured when saving file: "${name}"`);
+        console.log(
+          `An error occured when saving file: "${name}"`,
+        );
       }
     }
+  }
 
-    setIsloading(false);
+  async function handleGenerateFirst() {
+    setOpen(true);
+    const buf = await appData.pdf?.arrayBuffer();
+    const handle = appData.workDir;
+    let json = appData.fillData;
+    if (!buf || !json || !handle) return;
+    const data = json.at(option.start ?? 0);
+    if (!data) {
+      console.warn("data not found", data);
+      return;
+    }
+    console.info("start generating one file");
+    const pdfBytes = await generateFile(data, buf);
+    let name = `output.${Date.now()}.pdf`;
+    if (option.exportFileName) {
+      name = `${data[option.exportFileName]}.pdf`;
+    }
+    try {
+      const fileHandle = await handle.getFileHandle(name, {
+        create: true,
+      });
+      const writableStream =
+        await fileHandle.createWritable();
+      await writableStream.write(pdfBytes);
+      await writableStream.close();
+      console.log(
+        `file "${name}" saved to dir "${handle.name}"`,
+      );
+    } catch (err) {
+      console.log(
+        `An error occured when saving file: "${name}"`,
+      );
+    }
+  }
+
+  const [open, setOpen] = createSignal(false);
+
+  function loadingWrapper<
+    T extends any | ((...args: any[]) => void),
+  >(fn: T): T {
+    return async function (
+      this: any,
+      ...args: any
+    ): Promise<T> {
+      setInfo("loading", true);
+
+      if (typeof fn !== "function")
+        throw Error(
+          `Error fn type: ${typeof fn}, typeof fn should be function`,
+        );
+      try {
+        const result = fn.apply(this, args);
+        return await Promise.resolve(result);
+      } catch (err) {
+        throw err;
+      } finally {
+        setInfo("loading", false);
+      }
+    } as T;
   }
 
   return (
-    <Resizable class="w-full rounded-lg border">
-      <ResizablePanel
-        initialSize={0.4}
-        minSize={0.2}
-        class="p-2 flex-col flex gap-2"
-      >
-        {/* <Button onClick={() => ref.open()}>Open</Button>
-        <FileManage ref={ref} /> */}
-        <label class="w-full max-w-xs grid gap-1.5">
-          <p class="text-sm font-medium disabled-next">Step 1 Upload Xlsx</p>
-          <Input
-            type="file"
-            accept=".xlsx"
-            disabled={loading()}
-            onChange={async (e) => {
-              setIsloading(true);
-              const file = e.currentTarget.files?.item(0);
-              if (!file) {
-                setIsloading(false);
-                return;
-              }
+    <LoggerProvider timestamp>
+      <Resizable class="h-full w-full rounded-lg border">
+        <ResizablePanel
+          initialSize={0.4}
+          minSize={0.2}
+          class="relative overflow-y-auto"
+        >
+          <div class="absolute inset-2 flex flex-col gap-2">
+            <h2 class="h2">Data</h2>
+            <div class="grid w-full max-w-xs gap-1.5">
+              <label class="grid w-full max-w-xs gap-1.5">
+                <p class="disabled-next text-sm font-medium">
+                  Upload Xlsx
+                </p>
+                <Input
+                  type="file"
+                  accept=".xlsx"
+                  disabled={info.loading}
+                  onChange={loadingWrapper(async (e) => {
+                    const file =
+                      e.currentTarget.files?.item(0);
+                    if (!file) return;
 
-              const ab = await file.arrayBuffer();
-              const workbook = read(ab);
-              const sheetName = workbook.SheetNames[0];
-              const sheet = workbook.Sheets[sheetName];
+                    const ab = await file.arrayBuffer();
+                    const workbook = read(ab);
+                    const sheetName =
+                      workbook.SheetNames[0];
+                    const sheet =
+                      workbook.Sheets[sheetName];
 
-              setSheet(sheet);
-              setIsloading(false);
-            }}
-          />
-        </label>
+                    const json = utils.sheet_to_json(
+                      sheet,
+                      {
+                        raw: false,
+                        defval: "",
+                        blankrows: false,
+                      },
+                    );
+                    console.log(
+                      "first row of data:",
+                      JSON.stringify(json[0], null, 2),
+                    );
+                    setAppData(
+                      "fillData",
+                      json as Record<string, string>[],
+                    );
 
-        <label class="w-full max-w-xs grid gap-1.5">
-          <p class="text-sm font-medium disabled-next">Step 2 Upload PDF</p>
-          <Input
-            type="file"
-            id="pdf-template"
-            accept=".pdf"
-            disabled={loading()}
-            onChange={async (e) => {
-              setIsloading(true);
-              const file = e.currentTarget.files?.item(0);
-              if (!file) {
-                setIsloading(false);
-                return;
-              }
+                    const headers = [];
+                    const columnCount =
+                      utils.decode_range(sheet["!ref"]!).e
+                        .c + 1;
+                    for (let i = 0; i < columnCount; ++i) {
+                      headers[i] =
+                        sheet[`${utils.encode_col(i)}1`].v;
+                    }
+                    console.log(
+                      "xlsx headers:",
+                      JSON.stringify(headers, null, 2),
+                    );
 
-              const pdfData = await file.arrayBuffer();
-              setPdfBuf(pdfData);
-              const pdfDoc = await PDFDocument.load(pdfData);
-              console.log(
-                "pdf text fields",
-                pdfDoc
-                  .getForm()
-                  .getFields()
-                  .filter((field) => {
-                    return field instanceof PDFTextField;
-                  })
-                  .map((tf) => tf.getName())
-              );
+                    setAppData("headers", headers);
+                  })}
+                />
+              </label>
+              <Show when={appData.fillData}>
+                {(handle) => (
+                  <div
+                    class="flex items-start gap-2 rounded-md border p-1 text-sm
+                      font-medium shadow-sm"
+                  >
+                    <div class="flex w-full flex-1 flex-col">
+                      <p>{`Length: ${handle().length}`}</p>
+                      <Collapsible as="label">
+                        <div class="flex items-center justify-between gap-4">
+                          <p>
+                            Headers{" "}
+                            {appData.headers?.length}
+                          </p>
+                          <CollapsibleTrigger
+                            as={(
+                              props: CollapsibleTriggerProps,
+                            ) => (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                class="w-9 p-0"
+                                onClick={props.onClick}
+                              >
+                                <ChevronsUpDown />
+                                <span class="sr-only">
+                                  Toggle
+                                </span>
+                              </Button>
+                            )}
+                          />
+                        </div>
+                        <CollapsibleContent class="space-y-2">
+                          <ul class="list font-mono text-sm">
+                            <For each={appData.headers}>
+                              {(header) => (
+                                <li>{header}</li>
+                              )}
+                            </For>
+                          </ul>
+                        </CollapsibleContent>
+                      </Collapsible>
+                    </div>
+                    <Button
+                      variant="destructive"
+                      size="icon"
+                      onClick={() => {
+                        batch(() => {
+                          setAppData("fillData", null);
+                          setAppData("headers", null);
+                        });
+                      }}
+                    >
+                      <Trash class="size-4" />
+                    </Button>
+                  </div>
+                )}
+              </Show>
+            </div>
+            <div class="grid w-full max-w-xs gap-1.5">
+              <label class="grid w-full max-w-xs gap-1.5">
+                <p class="disabled-next text-sm font-medium">
+                  Upload PDF
+                </p>
+                <Input
+                  type="file"
+                  id="pdf-template"
+                  accept=".pdf"
+                  disabled={info.loading}
+                  onChange={loadingWrapper(async (e) => {
+                    const file =
+                      e.currentTarget.files?.item(0);
+                    if (!file) return;
 
-              setIsloading(false);
-            }}
-          />
-        </label>
-        <div class="w-full max-w-xs">
-          <p class="text-sm data-[disabled]:cursor-not-allowed data-[disabled]:opacity-70 font-medium">
-            Step 3 Open Directory
-          </p>
-          <Button disabled={loading()} onClick={selectWorkDir}>
-            {dirHandle() ? `Change` : `Open`}
-          </Button>
-          <Show when={dirHandle()}>
-            {(handle) => (
-              <p class="text-sm  font-medium">{`Current work directory is ${
-                handle().name
-              }`}</p>
-            )}
-          </Show>
-        </div>
+                    setAppData("pdf", file);
 
-        <div class="w-full max-w-xs">
-          <p class="text-sm data-[disabled]:cursor-not-allowed data-[disabled]:opacity-70 font-medium">
-            Step 4 Generate
-          </p>
-          <Button disabled={!info.generateEnable} onClick={() => generate()}>
-            Generate
-          </Button>
-        </div>
-      </ResizablePanel>
-      <ResizableHandle />
-      <ResizablePanel initialSize={0.6} minSize={0.2}>
-        <Resizable orientation="vertical">
-          <ResizablePanel
-            initialSize={0.4}
-            minSize={0.2}
-            class="flex flex-col p-2 gap-2"
-          >
-            <p class="text-lg font-bold">Options</p>
+                    const pdfDoc = await PDFDocument.load(
+                      await file.arrayBuffer(),
+                    );
+                    console.log(
+                      "pdf fields",
+                      pdfDoc
+                        .getForm()
+                        .getFields()
+                        .map(
+                          (f) =>
+                            `Type: ${getFieldType(f)} Name: ${f.getName()}`,
+                        ),
+                    );
+                  })}
+                />
+              </label>
+              <Show when={appData.pdf}>
+                {(handle) => (
+                  <div
+                    class="flex items-center rounded-md border p-1 text-sm font-medium
+                      shadow-sm"
+                  >
+                    <span class="w-full flex-1">{`PDF file: "${handle().name}"`}</span>
+                    <Button
+                      variant="destructive"
+                      size="icon"
+                      onClick={() =>
+                        setAppData("pdf", null)
+                      }
+                    >
+                      <Trash class="size-4" />
+                    </Button>
+                  </div>
+                )}
+              </Show>
+            </div>
+            <div class="flex w-full max-w-xs flex-col gap-1.5">
+              <p
+                class="text-sm font-medium data-[disabled]:cursor-not-allowed
+                  data-[disabled]:opacity-70"
+              >
+                Work Directory
+              </p>
+              <Button
+                disabled={info.loading}
+                onClick={loadingWrapper(async () => {
+                  try {
+                    const handle =
+                      await window.showDirectoryPicker({
+                        startIn: "documents",
+                        mode: "readwrite",
+                      });
+                    console.log(
+                      "select work directory: ",
+                      handle.name,
+                    );
+                    setAppData("workDir", handle);
+                  } catch (err) {
+                    console.warn((err as Error).message);
+                  }
+                })}
+              >
+                {appData.workDir ? `Change` : `Open`}
+              </Button>
+              <Show when={appData.workDir}>
+                {(handle) => (
+                  <div
+                    class="flex items-center rounded-md border p-1 text-sm font-medium
+                      shadow-sm"
+                  >
+                    <span class="w-full flex-1">{`Current work directory: "${handle().name}"`}</span>
+                    <Button
+                      variant="destructive"
+                      size="icon"
+                      onClick={() =>
+                        setAppData("workDir", null)
+                      }
+                    >
+                      <Trash class="size-4" />
+                    </Button>
+                  </div>
+                )}
+              </Show>
+            </div>
 
-            <div class="flex flex-col gap-2 w-full">
-              <div class="flex flex-col items-start">
-                <div class="flex gap-1 items-end">
-                  <label class="w-full max-w-xs grid gap-1.5">
-                    <p class="text-sm font-medium disabled-next">Custom Font</p>
-                    <div class="flex gap-1.5">
-                      <Input
-                        type="file"
-                        accept=".ttf,.otf,.woff,.woff2"
-                        disabled={loading()}
-                        onChange={async (e) => {
-                          setIsloading(true);
-                          const file = e.currentTarget.files?.item(0);
+            <div class="flex w-full max-w-xs flex-col gap-1.5">
+              <p
+                class="text-sm font-medium data-[disabled]:cursor-not-allowed
+                  data-[disabled]:opacity-70"
+              >
+                Image Directory
+              </p>
+              <Button
+                disabled={info.loading}
+                onClick={loadingWrapper(async (ev) => {
+                  try {
+                    const handle =
+                      await window.showDirectoryPicker({
+                        startIn: "pictures",
+                        mode: "read",
+                      });
+                    console.log(
+                      "select img directory: ",
+                      handle.name,
+                    );
+                    setAppData("imgDir", handle);
+                  } catch (err) {
+                    console.warn((err as Error).message);
+                  }
+                })}
+              >
+                {appData.imgDir ? "Change" : "Open"}
+              </Button>
+              <Show when={appData.imgDir}>
+                {(handle) => (
+                  <div
+                    class="flex items-center rounded-md border p-1 text-sm font-medium
+                      shadow-sm"
+                  >
+                    <span class="w-full flex-1">{`Current image directory: "${handle().name}"`}</span>
+                    <Button
+                      variant="destructive"
+                      size="icon"
+                      onClick={() =>
+                        setAppData("imgDir", null)
+                      }
+                    >
+                      <Trash class="size-4" />
+                    </Button>
+                  </div>
+                )}
+              </Show>
+            </div>
+
+            <div class="w-full max-w-xs">
+              <p
+                class="text-sm font-medium data-[disabled]:cursor-not-allowed
+                  data-[disabled]:opacity-70"
+              >
+                Generate
+              </p>
+              <div class="flex gap-1.5">
+                <Button
+                  disabled={!info.generateEnable}
+                  onClick={loadingWrapper(
+                    handleGenerateFirst,
+                  )}
+                >
+                  Generate One
+                </Button>
+                <Button
+                  disabled={!info.generateEnable}
+                  onClick={loadingWrapper(handleGenerate)}
+                >
+                  Generate
+                </Button>
+              </div>
+            </div>
+          </div>
+        </ResizablePanel>
+        <ResizableHandle withHandle />
+        <ResizablePanel
+          initialSize={0.6}
+          minSize={0.2}
+          class="relative overflow-y-auto"
+        >
+          <div class="absolute inset-2 flex flex-col gap-2">
+            <h2 class="h2">Options</h2>
+
+            <div class="flex w-full flex-col gap-2">
+              <div class="flex flex-col items-start gap-1">
+                <div class="flex items-end gap-1">
+                  <label class="grid w-full max-w-xs gap-1.5">
+                    <p class="disabled-next text-sm font-medium">
+                      Custom Font
+                    </p>
+                    <Input
+                      type="file"
+                      accept=".ttf,.otf,.woff,.woff2"
+                      disabled={info.loading}
+                      onChange={loadingWrapper(
+                        async (e) => {
+                          const file =
+                            e.currentTarget.files?.item(0);
                           if (!file) {
-                            setIsloading(false);
                             return;
                           }
 
                           setCustomFontFile(file);
-                          setIsloading(false);
-                        }}
-                      />
-                      <Button
-                        disabled={!customFontFile()}
-                        onClick={(e) => {
-                          e.preventDefault();
-                          setCustomFontFile(null);
-                        }}
-                      >
-                        Remove
-                      </Button>
-                    </div>
+                        },
+                      )}
+                    />
                   </label>
                 </div>
                 <Show when={customFontFile()}>
                   {(font) => (
-                    <p class="text-sm">{`use custom font: "${font().name}"`}</p>
+                    <div
+                      class="flex items-center gap-1.5 rounded-md border border-input p-1
+                        shadow-sm"
+                    >
+                      <p class="text-sm">{`Use custom font: "${
+                        font().name
+                      }"`}</p>
+                      <Button
+                        disabled={info.loading}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          setCustomFontFile(null);
+                        }}
+                        variant="destructive"
+                        size="icon"
+                      >
+                        <Trash class="size-4" />
+                      </Button>
+                    </div>
                   )}
                 </Show>
               </div>
@@ -407,13 +871,20 @@ const App: Component = () => {
                 class="w-full max-w-xs"
                 value={option.start}
                 minValue={0}
-                maxValue={option.end ? option.end - 1 : undefined}
+                maxValue={
+                  option.end ? option.end - 1 : undefined
+                }
                 onChange={(value) =>
-                  setOption("start", optional(parseInt(value)) ?? undefined)
+                  setOption(
+                    "start",
+                    optional(parseInt(value)) ?? undefined,
+                  )
                 }
                 disabled={!info.rangeEnable}
               >
-                <NumberFieldLabel>Start Index</NumberFieldLabel>
+                <NumberFieldLabel>
+                  Start Index
+                </NumberFieldLabel>
                 <div class="flex w-full gap-1">
                   <NumberFieldGroup class="flex-1">
                     <NumberFieldDecrementTrigger aria-label="Decrement" />
@@ -432,14 +903,23 @@ const App: Component = () => {
               <NumberField
                 class="w-full max-w-xs"
                 value={option.end}
-                minValue={option.start ? option.start + 1 : undefined}
-                maxValue={jsonData()?.length}
+                minValue={
+                  option.start
+                    ? option.start + 1
+                    : undefined
+                }
+                maxValue={appData.fillData?.length}
                 onChange={(value) =>
-                  setOption("end", optional(parseInt(value)) ?? undefined)
+                  setOption(
+                    "end",
+                    optional(parseInt(value)) ?? undefined,
+                  )
                 }
                 disabled={!info.rangeEnable}
               >
-                <NumberFieldLabel>End Index</NumberFieldLabel>
+                <NumberFieldLabel>
+                  End Index
+                </NumberFieldLabel>
                 <div class="flex w-full gap-1">
                   <NumberFieldGroup class="flex-1">
                     <NumberFieldDecrementTrigger aria-label="Decrement" />
@@ -448,15 +928,39 @@ const App: Component = () => {
                   </NumberFieldGroup>
                   <Button
                     disabled={!info.rangeEnable}
-                    onClick={() => setOption("end", jsonData()?.length)}
+                    onClick={() =>
+                      setOption(
+                        "end",
+                        appData.fillData?.length,
+                      )
+                    }
                   >
                     Last
                   </Button>
                 </div>
               </NumberField>
-              <label class="grid gap-1.5 w-full max-w-xs">
-                <p class="text-sm disabled-next font-medium">
-                  fllow the column name
+              <Switch
+                disabled={info.loading}
+                class="flex items-center gap-2"
+                checked={option.skipError}
+                onChange={(isChecked) =>
+                  setOption("skipError", isChecked)
+                }
+              >
+                <SwitchControl>
+                  <SwitchThumb />
+                </SwitchControl>
+                <SwitchLabel
+                  class="text-sm font-medium leading-none
+                    data-[disabled]:cursor-not-allowed
+                    data-[disabled]:opacity-70"
+                >
+                  Skip Error
+                </SwitchLabel>
+              </Switch>
+              <label class="grid w-full max-w-xs gap-1.5">
+                <p class="disabled-next text-sm font-medium">
+                  Export Name
                 </p>
                 <Select
                   fitViewport
@@ -464,16 +968,24 @@ const App: Component = () => {
                   disabled={!info.selectColumnEnable}
                   optionValue="value"
                   optionTextValue="name"
-                  defaultValue={{ name: "None", value: "" }}
+                  defaultValue={{
+                    name: "None",
+                    value: "",
+                  }}
                   onChange={(v) => {
                     setOption(
-                      "fileWithColumnName",
-                      reconcile(optional(v.value) ?? undefined)
+                      "exportFileName",
+                      reconcile(
+                        optional(v.value) ?? undefined,
+                      ),
                     );
                   }}
                   options={[
                     { name: "None", value: "" },
-                    ...(headers()?.map((h) => ({ name: h, value: h })) ?? []),
+                    ...(appData.headers?.map((h) => ({
+                      name: h,
+                      value: h,
+                    })) ?? []),
                   ]}
                   itemComponent={(props) => (
                     <SelectItem item={props.item}>
@@ -483,37 +995,61 @@ const App: Component = () => {
                 >
                   <SelectTrigger class="w-full max-w-xs">
                     <SelectValue<Item>>
-                      {(state) => state.selectedOption().name}
+                      {(state) =>
+                        state.selectedOption().name
+                      }
                     </SelectValue>
                   </SelectTrigger>
                   <SelectContent
                     class="overflow-y-auto"
                     style={{
-                      "max-height": "var(--kb-popper-content-available-height)",
-                      "max-width": "var(--kb-popper-content-available-width)",
+                      "max-height":
+                        "var(--kb-popper-content-available-height)",
+                      "max-width":
+                        "var(--kb-popper-content-available-width)",
                     }}
                   />
                 </Select>
               </label>
             </div>
-            {/* <pre>{JSON.stringify(option, null, 2)}</pre> */}
-            <Show when={loading()}>
-              <h1 class="text-2xl font-bold">Loading</h1>
+
+            <Drawer open={open()} onOpenChange={setOpen}>
+              <DrawerTrigger as={Button} variant="outline">
+                Open Logger
+              </DrawerTrigger>
+              <DrawerContent class="container flex h-2/3 flex-col">
+                <DrawerHeader>
+                  <DrawerLabel>
+                    <Show
+                      when={info.loading}
+                      fallback={<>Logs</>}
+                    >
+                      Logging
+                    </Show>
+                  </DrawerLabel>
+                </DrawerHeader>
+                <div class="relative w-full flex-1">
+                  <Logger
+                    data-corvu-no-drag
+                    class="absolute inset-0 select-text overflow-y-auto
+                      whitespace-pre-wrap font-mono text-xs"
+                  />
+                </div>
+              </DrawerContent>
+            </Drawer>
+            <Show when={info.loading}>
+              <h1 class="h3">Loading</h1>
             </Show>
+
             <Show when={BUILD_DATE}>
-              {(bd) => <p>{`Build Date: ${bd()}`}</p>}
+              {(bd) => (
+                <p class="muted mt-auto">{`Build Date: ${bd()}`}</p>
+              )}
             </Show>
-          </ResizablePanel>
-          <ResizableHandle />
-          <ResizablePanel initialSize={0.6} minSize={0} class="relative">
-            <Logger
-              timestamp
-              class="h-full w-full text-xs  whitespace-pre-wrap overflow-y-auto absolute inset-0"
-            />
-          </ResizablePanel>
-        </Resizable>
-      </ResizablePanel>
-    </Resizable>
+          </div>
+        </ResizablePanel>
+      </Resizable>
+    </LoggerProvider>
   );
 };
 

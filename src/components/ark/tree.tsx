@@ -11,18 +11,23 @@ export interface TreeViewData {
   children: Child[];
 }
 
-export interface TreeViewProps extends TreeViewPrimitive.RootProps {
+export interface TreeViewProps
+  extends TreeViewPrimitive.RootProps {
   data: TreeViewData;
 }
 export const TreeView = (props: TreeViewProps) => {
-  const [localProps, rootProps] = splitProps(props, ["data"]);
+  const [localProps, rootProps] = splitProps(props, [
+    "data",
+  ]);
 
   const renderChild = (child: Child) => (
     <Show
       when={child.children}
       fallback={
         <TreeViewPrimitive.Item value={child.value}>
-          <TreeViewPrimitive.ItemText>{child.name}</TreeViewPrimitive.ItemText>
+          <TreeViewPrimitive.ItemText>
+            {child.name}
+          </TreeViewPrimitive.ItemText>
         </TreeViewPrimitive.Item>
       }
     >
@@ -36,14 +41,19 @@ export const TreeView = (props: TreeViewProps) => {
           </TreeViewPrimitive.BranchText>
         </TreeViewPrimitive.BranchControl>
         <TreeViewPrimitive.BranchContent>
-          <For each={child.children}>{(child) => renderChild(child)}</For>
+          <For each={child.children}>
+            {(child) => renderChild(child)}
+          </For>
         </TreeViewPrimitive.BranchContent>
       </TreeViewPrimitive.Branch>
     </Show>
   );
 
   return (
-    <TreeViewPrimitive.Root aria-label={localProps.data.label} {...rootProps}>
+    <TreeViewPrimitive.Root
+      aria-label={localProps.data.label}
+      {...rootProps}
+    >
       <TreeViewPrimitive.Tree>
         <For each={localProps.data.children}>
           {(child) => renderChild(child)}
@@ -54,7 +64,10 @@ export const TreeView = (props: TreeViewProps) => {
 };
 
 const ChevronRightIcon = () => (
-  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    viewBox="0 0 24 24"
+  >
     <title>Chevron Right Icon</title>
     <path
       fill="none"

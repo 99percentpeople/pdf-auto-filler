@@ -1,0 +1,11 @@
+module.exports = {
+  tabWidth: 2,
+  printWidth: 60,
+  tailwindFunctions: ["cn"],
+  tailwindConfig: "tailwind.config.js",
+  plugins: [
+    "prettier-plugin-tailwindcss",
+    "prettier-plugin-classnames",
+    "prettier-plugin-merge",
+  ],
+};

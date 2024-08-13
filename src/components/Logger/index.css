@@ -1,15 +1,37 @@
-*[data-level="info"] {
-  @apply bg-cyan-500/50;
-}
+.logger {
+  & * {
+    &[data-level="info"] {
+      @apply bg-cyan-500/10;
+    }
 
-*[data-level="warn"] {
-  @apply bg-orange-500/50;
-}
+    &[data-level="warn"] {
+      @apply bg-orange-500/10;
+    }
 
-*[data-level="error"] {
-  @apply bg-red-500/50;
-}
+    &[data-level="error"] {
+      @apply bg-red-500/10;
+    }
 
-*[data-level="log"] {
-  @apply bg-green-500/50;
+    &[data-level="log"] {
+      @apply bg-green-500/10;
+    }
+  }
+
+  & :nth-child(even) {
+    &[data-level="info"] {
+      @apply bg-cyan-500/20;
+    }
+
+    &[data-level="warn"] {
+      @apply bg-orange-500/20;
+    }
+
+    &[data-level="error"] {
+      @apply bg-red-500/20;
+    }
+
+    &[data-level="log"] {
+      @apply bg-green-500/20;
+    }
+  }
 }
