@@ -10,19 +10,30 @@ import {
 import { createStore, reconcile } from "solid-js/store";
 import "./App.css";
 import {
+  asPDFName,
   degrees,
   drawImage,
+  drawText,
   PDFButton,
   PDFCheckBox,
   PDFDocument,
   PDFDropdown,
   PDFField,
   PDFFont,
+  PDFHexString,
   PDFImage,
+  PDFName,
+  PDFOperator,
+  PDFOperatorNames,
   PDFOptionList,
   PDFRadioGroup,
   PDFSignature,
+  PDFString,
   PDFTextField,
+  popGraphicsState,
+  pushGraphicsState,
+  rgb,
+  StandardFonts,
 } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
 import { read, utils } from "xlsx";
@@ -75,6 +86,7 @@ import {
   CollapsibleTrigger,
 } from "./components/ui/collapsible";
 import { CollapsibleTriggerProps } from "@kobalte/core/collapsible";
+import { makePersisted } from "@solid-primitives/storage";
 
 type Item = {
   value: string;
@@ -88,6 +100,7 @@ type AppOptions = {
   exportFileName?: string;
   // 忽略错误，继续执行
   skipError?: boolean;
+  flattern?: boolean;
 };
 
 type AppData = {
@@ -169,9 +182,16 @@ const App: Component = () => {
     selectColumnEnable: false,
     generateEnable: false,
   });
-  const [option, setOption] = createStore<AppOptions>({
-    start: 0,
-  });
+  const [option, setOption] = makePersisted(
+    createStore<AppOptions>({
+      start: 0,
+      flattern: false,
+    }),
+    {
+      storage: sessionStorage,
+      name: "options",
+    },
+  );
 
   onMount(async () => {
     const workDirHandle =
@@ -248,129 +268,229 @@ const App: Component = () => {
     const pdfDoc = await PDFDocument.load(pdfBuf);
     const font = customFontFile();
     const form = pdfDoc.getForm();
-    let customFont: PDFFont | undefined;
+    let customFont: PDFFont;
+
+    pdfDoc.registerFontkit(fontkit);
     if (font) {
-      pdfDoc.registerFontkit(fontkit);
       customFont = await pdfDoc.embedFont(
         await font.arrayBuffer(),
-        {},
       );
-      const rawUpdateFieldAppearances =
-        form.updateFieldAppearances.bind(form);
-      form.updateFieldAppearances = function () {
-        return rawUpdateFieldAppearances(customFont);
-      };
+    } else {
+      customFont = await pdfDoc.embedFont(
+        StandardFonts.TimesRoman,
+      );
     }
+
+    const rawUpdateFieldAppearances =
+      form.updateFieldAppearances.bind(form);
+    form.updateFieldAppearances = function () {
+      return rawUpdateFieldAppearances(customFont);
+    };
+
     for (const field of form.getFields()) {
-      switch (getFieldType(field)) {
-        case "PDFTextField": {
-          const f = field as PDFTextField;
-          const text = data[field.getName()];
-          if (text) {
-            if (text.startsWith("file://")) {
+      try {
+        switch (getFieldType(field)) {
+          case "PDFTextField": {
+            const f = field as PDFTextField;
+            const text = data[field.getName()];
+            if (text) {
+              if (text.startsWith("file://")) {
+                const filename = text.replace(
+                  /^file:\/\//,
+                  "",
+                );
+                console.log(`get file ${filename}`);
+              } else {
+                f.setText(text);
+                console.log(
+                  "field",
+                  `"${f.getName()}"`,
+                  "filling with text",
+                  `"${f.getText()}"`,
+                );
+              }
+            }
+            break;
+          }
+          case "PDFSignature": {
+            const sig = field as PDFSignature;
+
+            const text = data[field.getName()];
+
+            if (text && text.startsWith("file://")) {
               const filename = text.replace(
                 /^file:\/\//,
                 "",
               );
-              console.log(`get file ${filename}`);
-            } else {
-              f.setText(text);
-              console.log(
-                "field",
-                `"${f.getName()}"`,
-                "filling with text",
-                `"${f.getText()}"`,
-              );
-            }
-          }
-          break;
-        }
-        case "PDFSignature": {
-          const sig = field as PDFSignature;
+              console.log(`trying to get file ${filename}`);
+              if (!appData.imgDir) {
+                throw Error(`imgDir is required`);
+              }
+              const imgHandle =
+                await appData.imgDir?.getFileHandle(
+                  filename,
+                );
+              if (!imgHandle) {
+                throw Error(
+                  `${filename} not found in ${appData.imgDir.name}`,
+                );
+              }
 
-          const text = data[field.getName()];
-          if (text && text.startsWith("file://")) {
-            const filename = text.replace(/^file:\/\//, "");
-            console.log(`trying to get file ${filename}`);
-            if (!appData.imgDir) {
-              console.warn("imgDir not set");
-              if (option.skipError) continue;
-              else break;
-            }
-            const imgHandle =
-              await appData.imgDir?.getFileHandle(filename);
-            if (!imgHandle) {
-              console.warn(
-                `${filename} not found in ${appData.imgDir.name}`,
-              );
-              if (option.skipError) continue;
-              else break;
-            }
+              const file = await imgHandle.getFile();
+              let pdfLibSigImg: PDFImage | undefined;
+              if (file.type === "image/jpeg") {
+                pdfLibSigImg = await pdfDoc.embedJpg(
+                  await file.arrayBuffer(),
+                );
+              } else if (file.type === "image/png") {
+                pdfLibSigImg = await pdfDoc.embedPng(
+                  await file.arrayBuffer(),
+                );
+              }
 
-            const file = await imgHandle.getFile();
-            let pdfLibSigImg: PDFImage | undefined;
-            if (file.type === "image/jpeg") {
-              pdfLibSigImg = await pdfDoc.embedJpg(
-                await file.arrayBuffer(),
-              );
-            } else if (file.type === "image/png") {
-              pdfLibSigImg = await pdfDoc.embedPng(
-                await file.arrayBuffer(),
-              );
-            }
+              if (!pdfLibSigImg) {
+                throw Error(`${file.type} is not support`);
+              }
 
-            if (!pdfLibSigImg) {
-              console.warn(`${file.type} is not support`);
-              if (option.skipError) continue;
-              else break;
-            }
+              sig.acroField
+                .getWidgets()
+                .forEach((widget) => {
+                  console.log(
+                    `drawing ${file.name} to field ${field.getName()}`,
+                    `Rect: ${JSON.stringify(widget.getRectangle())}`,
+                  );
+                  const { context } = widget.dict;
+                  const { width, height } =
+                    widget.getRectangle();
 
-            sig.acroField.getWidgets().forEach((widget) => {
-              console.log(
-                `drawing ${file.name} to field ${field.getName()}`,
-                `Rect: ${JSON.stringify(widget.getRectangle())}`,
-              );
-              const { context } = widget.dict;
-              const { width, height } =
-                widget.getRectangle();
+                  const appearance = [
+                    ...drawImage(filename, {
+                      x: 0,
+                      y: 0,
+                      width: width,
+                      height: height,
+                      rotate: degrees(0),
+                      xSkew: degrees(0),
+                      ySkew: degrees(0),
+                    }),
+                  ];
 
-              const appearance = [
-                ...drawImage(filename, {
-                  x: 0,
-                  y: 0,
-                  width: width,
-                  height: height,
-                  rotate: degrees(0),
-                  xSkew: degrees(0),
-                  ySkew: degrees(0),
-                }),
-              ];
-
-              const stream = context.formXObject(
-                appearance,
-                {
-                  Resources: {
-                    XObject: {
-                      [filename]: pdfLibSigImg.ref,
+                  const stream = context.formXObject(
+                    appearance,
+                    {
+                      Resources: {
+                        XObject: {
+                          [filename]: pdfLibSigImg.ref,
+                        },
+                      },
+                      BBox: context.obj([
+                        0,
+                        0,
+                        width,
+                        height,
+                      ]),
+                      Matrix: context.obj([
+                        1, 0, 0, 1, 0, 0,
+                      ]),
                     },
-                  },
-                  BBox: context.obj([0, 0, width, height]),
-                  Matrix: context.obj([1, 0, 0, 1, 0, 0]),
-                },
-              );
-              const streamRef = context.register(stream);
+                  );
+                  const streamRef =
+                    context.register(stream);
 
-              widget.setNormalAppearance(streamRef);
-            });
-          } else {
-            console.warn(
-              `sign ${field.getName()} with text is not supported yet`,
-            );
+                  widget.setNormalAppearance(streamRef);
+                });
+            } else {
+              sig.acroField
+                .getWidgets()
+                .forEach((widget) => {
+                  const { context } = widget.dict;
+                  const { width, height } =
+                    widget.getRectangle();
+                  console.log(
+                    `drawing text "${text}" to field ${field.getName()}`,
+                    `Rect: ${JSON.stringify(widget.getRectangle())}`,
+                  );
+                  const fontSize =
+                    customFont.sizeAtHeight(height);
+                  const calcWidth =
+                    customFont.widthOfTextAtSize(
+                      text,
+                      fontSize,
+                    );
+                  const ratio = width / calcWidth;
+                  const calcSize = Math.min(
+                    fontSize,
+                    fontSize * ratio,
+                  );
+                  const fixedWidth =
+                    customFont.widthOfTextAtSize(
+                      text,
+                      calcSize,
+                    );
+
+                  const appearance = [
+                    PDFOperator.of(
+                      PDFOperatorNames.BeginMarkedContent,
+                      [asPDFName("Tx")],
+                    ),
+                    pushGraphicsState(),
+                    ...drawText(
+                      customFont.encodeText(text),
+                      {
+                        x: (width - fixedWidth) / 2,
+                        y: (height - calcSize) / 2,
+                        color: rgb(0, 0, 0),
+                        font: customFont.name,
+                        size: calcSize,
+                        rotate: degrees(0),
+                        xSkew: degrees(0),
+                        ySkew: degrees(0),
+                      },
+                    ),
+                    popGraphicsState(),
+                    PDFOperator.of(
+                      PDFOperatorNames.EndMarkedContent,
+                    ),
+                  ];
+                  const stream = context.contentStream(
+                    appearance,
+                    {
+                      BBox: context.obj([
+                        0,
+                        0,
+                        width,
+                        height,
+                      ]),
+                      Resources: {
+                        Font: {
+                          [customFont.name]: customFont.ref,
+                        },
+                      },
+                      Matrix: context.obj([
+                        1, 0, 0, 1, 0, 0,
+                      ]),
+                    },
+                  );
+
+                  const streamRef =
+                    context.register(stream);
+
+                  widget.setNormalAppearance(streamRef);
+
+                  // console.warn(
+                  //   `sign ${field.getName()} with text is not supported yet`,
+                  // );
+                });
+            }
+            break;
           }
-          break;
         }
+      } catch (err) {
+        throw err;
       }
     }
+
+    if (option.flattern) form.flatten();
 
     const pdfBytes = await pdfDoc.save();
     return pdfBytes;
@@ -434,9 +554,11 @@ const App: Component = () => {
           `file "${name}" saved to dir "${handle.name}"`,
         );
       } catch (err) {
-        console.log(
-          `An error occured when saving file: "${name}"`,
-        );
+        if (err instanceof Error)
+          console.log(
+            `An error occured when generating file: "${name}"`,
+            err.message,
+          );
       }
     }
   }
@@ -447,18 +569,20 @@ const App: Component = () => {
     const handle = appData.workDir;
     let json = appData.fillData;
     if (!buf || !json || !handle) return;
-    const data = json.at(option.start ?? 0);
+    const index = option.start ?? 0;
+    const data = json.at(index);
     if (!data) {
-      console.warn("data not found", data);
+      console.warn(`json[${index}] data not found`, json);
       return;
     }
     console.info("start generating one file");
-    const pdfBytes = await generateFile(data, buf);
     let name = `output.${Date.now()}.pdf`;
-    if (option.exportFileName) {
-      name = `${data[option.exportFileName]}.pdf`;
-    }
     try {
+      const pdfBytes = await generateFile(data, buf);
+      if (option.exportFileName) {
+        name = `${data[option.exportFileName]}.pdf`;
+      }
+
       const fileHandle = await handle.getFileHandle(name, {
         create: true,
       });
@@ -470,9 +594,11 @@ const App: Component = () => {
         `file "${name}" saved to dir "${handle.name}"`,
       );
     } catch (err) {
-      console.log(
-        `An error occured when saving file: "${name}"`,
-      );
+      if (err instanceof Error)
+        console.error(
+          `An error occured when generating file: "${name}"`,
+          err.message,
+        );
     }
   }
 
@@ -512,7 +638,7 @@ const App: Component = () => {
         >
           <div class="absolute inset-2 flex flex-col gap-2">
             <h2 class="h2">Data</h2>
-            <div class="grid w-full max-w-xs gap-1.5">
+            <div class="grid gap-1.5">
               <label class="grid w-full max-w-xs gap-1.5">
                 <p class="disabled-next text-sm font-medium">
                   Upload Xlsx
@@ -626,8 +752,8 @@ const App: Component = () => {
                 )}
               </Show>
             </div>
-            <div class="grid w-full max-w-xs gap-1.5">
-              <label class="grid w-full max-w-xs gap-1.5">
+            <div class="grid w-full gap-1.5">
+              <label class="flex w-full max-w-xs flex-col gap-1.5">
                 <p class="disabled-next text-sm font-medium">
                   Upload PDF
                 </p>
@@ -665,7 +791,7 @@ const App: Component = () => {
                     class="flex items-center rounded-md border p-1 text-sm font-medium
                       shadow-sm"
                   >
-                    <span class="w-full flex-1">{`PDF file: "${handle().name}"`}</span>
+                    <span class="flex-1">{`PDF file: "${handle().name}"`}</span>
                     <Button
                       variant="destructive"
                       size="icon"
@@ -874,204 +1000,216 @@ const App: Component = () => {
           <div class="absolute inset-2 flex flex-col gap-2">
             <h2 class="h2">Options</h2>
 
-            <div class="flex w-full flex-col gap-2">
-              <div class="flex flex-col items-start gap-1">
-                <div class="flex items-end gap-1">
-                  <label class="grid w-full max-w-xs gap-1.5">
-                    <p class="disabled-next text-sm font-medium">
-                      Custom Font
-                    </p>
-                    <Input
-                      type="file"
-                      accept=".ttf,.otf,.woff,.woff2"
-                      disabled={info.loading}
-                      onChange={loadingWrapper(
-                        async (e) => {
-                          const file =
-                            e.currentTarget.files?.item(0);
-                          if (!file) {
-                            return;
-                          }
-
-                          setCustomFontFile(file);
-                        },
-                      )}
-                    />
-                  </label>
-                </div>
-                <Show when={customFontFile()}>
-                  {(font) => (
-                    <div
-                      class="flex items-center gap-1.5 rounded-md border border-input p-1
-                        shadow-sm"
-                    >
-                      <p class="text-sm">{`Use custom font: "${
-                        font().name
-                      }"`}</p>
-                      <Button
-                        disabled={info.loading}
-                        onClick={(e) => {
-                          e.preventDefault();
-                          setCustomFontFile(null);
-                        }}
-                        variant="destructive"
-                        size="icon"
-                      >
-                        <Trash class="size-4" />
-                      </Button>
-                    </div>
-                  )}
-                </Show>
-              </div>
-
-              <NumberField
-                class="w-full max-w-xs"
-                value={option.start}
-                minValue={0}
-                maxValue={
-                  option.end ? option.end - 1 : undefined
-                }
-                onChange={(value) =>
-                  setOption(
-                    "start",
-                    optional(parseInt(value)) ?? undefined,
-                  )
-                }
-                disabled={!info.rangeEnable}
-              >
-                <NumberFieldLabel>
-                  Start Index
-                </NumberFieldLabel>
-                <div class="flex w-full gap-1">
-                  <NumberFieldGroup class="flex-1">
-                    <NumberFieldDecrementTrigger aria-label="Decrement" />
-                    <NumberFieldInput />
-                    <NumberFieldIncrementTrigger aria-label="Increment" />
-                  </NumberFieldGroup>
-                  <Button
-                    disabled={!info.rangeEnable}
-                    onClick={() => setOption("start", 0)}
-                  >
-                    First
-                  </Button>
-                </div>
-              </NumberField>
-
-              <NumberField
-                class="w-full max-w-xs"
-                value={option.end}
-                minValue={
-                  option.start
-                    ? option.start + 1
-                    : undefined
-                }
-                maxValue={appData.fillData?.length}
-                onChange={(value) =>
-                  setOption(
-                    "end",
-                    optional(parseInt(value)) ?? undefined,
-                  )
-                }
-                disabled={!info.rangeEnable}
-              >
-                <NumberFieldLabel>
-                  End Index
-                </NumberFieldLabel>
-                <div class="flex w-full gap-1">
-                  <NumberFieldGroup class="flex-1">
-                    <NumberFieldDecrementTrigger aria-label="Decrement" />
-                    <NumberFieldInput />
-                    <NumberFieldIncrementTrigger aria-label="Increment" />
-                  </NumberFieldGroup>
-                  <Button
-                    disabled={!info.rangeEnable}
-                    onClick={() =>
-                      setOption(
-                        "end",
-                        appData.fillData?.length,
-                      )
-                    }
-                  >
-                    Last
-                  </Button>
-                </div>
-              </NumberField>
-              <Switch
-                disabled={info.loading}
-                class="flex items-center gap-2"
-                checked={option.skipError}
-                onChange={(isChecked) =>
-                  setOption("skipError", isChecked)
-                }
-              >
-                <SwitchControl>
-                  <SwitchThumb />
-                </SwitchControl>
-                <SwitchLabel
-                  class="text-sm font-medium leading-none
-                    data-[disabled]:cursor-not-allowed
-                    data-[disabled]:opacity-70"
-                >
-                  Skip Error
-                </SwitchLabel>
-              </Switch>
+            <div class="flex flex-col items-start gap-1.5">
               <label class="grid w-full max-w-xs gap-1.5">
                 <p class="disabled-next text-sm font-medium">
-                  Export Name
+                  Custom Font
                 </p>
-                <Select
-                  fitViewport
-                  placeholder="None"
-                  disabled={!info.selectColumnEnable}
-                  optionValue="value"
-                  optionTextValue="name"
-                  defaultValue={{
-                    name: "None",
-                    value: "",
-                  }}
-                  onChange={(v) => {
-                    setOption(
-                      "exportFileName",
-                      reconcile(
-                        optional(v.value) ?? undefined,
-                      ),
-                    );
-                  }}
-                  options={[
-                    { name: "None", value: "" },
-                    ...(appData.headers?.map((h) => ({
-                      name: h,
-                      value: h,
-                    })) ?? []),
-                  ]}
-                  itemComponent={(props) => (
-                    <SelectItem item={props.item}>
-                      {props.item.rawValue.name}
-                    </SelectItem>
-                  )}
-                >
-                  <SelectTrigger class="w-full max-w-xs">
-                    <SelectValue<Item>>
-                      {(state) =>
-                        state.selectedOption().name
-                      }
-                    </SelectValue>
-                  </SelectTrigger>
-                  <SelectContent
-                    class="overflow-y-auto"
-                    style={{
-                      "max-height":
-                        "var(--kb-popper-content-available-height)",
-                      "max-width":
-                        "var(--kb-popper-content-available-width)",
-                    }}
-                  />
-                </Select>
+                <Input
+                  type="file"
+                  accept=".ttf,.otf,.woff,.woff2"
+                  disabled={info.loading}
+                  onChange={loadingWrapper(async (e) => {
+                    const file =
+                      e.currentTarget.files?.item(0);
+                    if (!file) {
+                      return;
+                    }
+
+                    setCustomFontFile(file);
+                  })}
+                />
               </label>
+
+              <Show when={customFontFile()}>
+                {(font) => (
+                  <div
+                    class="flex items-center gap-1.5 rounded-md border border-input p-1
+                      shadow-sm"
+                  >
+                    <p class="text-sm">{`Use custom font: "${
+                      font().name
+                    }"`}</p>
+                    <Button
+                      disabled={info.loading}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        setCustomFontFile(null);
+                      }}
+                      variant="destructive"
+                      size="icon"
+                    >
+                      <Trash class="size-4" />
+                    </Button>
+                  </div>
+                )}
+              </Show>
             </div>
 
+            <NumberField
+              class="w-full max-w-xs"
+              value={option.start}
+              minValue={0}
+              maxValue={
+                option.end ? option.end - 1 : undefined
+              }
+              onChange={(value) =>
+                setOption(
+                  "start",
+                  optional(parseInt(value)) ?? undefined,
+                )
+              }
+              disabled={!info.rangeEnable}
+            >
+              <NumberFieldLabel>
+                Start Index
+              </NumberFieldLabel>
+              <div class="flex w-full gap-1">
+                <NumberFieldGroup class="flex-1">
+                  <NumberFieldDecrementTrigger aria-label="Decrement" />
+                  <NumberFieldInput />
+                  <NumberFieldIncrementTrigger aria-label="Increment" />
+                </NumberFieldGroup>
+                <Button
+                  disabled={!info.rangeEnable}
+                  onClick={() => setOption("start", 0)}
+                >
+                  First
+                </Button>
+              </div>
+            </NumberField>
+
+            <NumberField
+              class="w-full max-w-xs"
+              value={option.end}
+              minValue={
+                option.start ? option.start + 1 : undefined
+              }
+              maxValue={appData.fillData?.length}
+              onChange={(value) =>
+                setOption(
+                  "end",
+                  optional(parseInt(value)) ?? undefined,
+                )
+              }
+              disabled={!info.rangeEnable}
+            >
+              <NumberFieldLabel>End Index</NumberFieldLabel>
+              <div class="flex w-full gap-1">
+                <NumberFieldGroup class="flex-1">
+                  <NumberFieldDecrementTrigger aria-label="Decrement" />
+                  <NumberFieldInput />
+                  <NumberFieldIncrementTrigger aria-label="Increment" />
+                </NumberFieldGroup>
+                <Button
+                  disabled={!info.rangeEnable}
+                  onClick={() =>
+                    setOption(
+                      "end",
+                      appData.fillData?.length,
+                    )
+                  }
+                >
+                  Last
+                </Button>
+              </div>
+            </NumberField>
+            <Switch
+              disabled={info.loading}
+              class="flex items-center gap-2"
+              checked={option.skipError}
+              onChange={(isChecked) =>
+                setOption("skipError", isChecked)
+              }
+            >
+              <SwitchControl>
+                <SwitchThumb />
+              </SwitchControl>
+              <SwitchLabel
+                class="text-sm font-medium leading-none
+                  data-[disabled]:cursor-not-allowed
+                  data-[disabled]:opacity-70"
+              >
+                Skip Error
+              </SwitchLabel>
+            </Switch>
+            <Switch
+              disabled={info.loading}
+              class="flex items-center gap-2"
+              checked={option.flattern}
+              onChange={(isChecked) =>
+                setOption("flattern", isChecked)
+              }
+            >
+              <SwitchControl>
+                <SwitchThumb />
+              </SwitchControl>
+              <SwitchLabel
+                class="text-sm font-medium leading-none
+                  data-[disabled]:cursor-not-allowed
+                  data-[disabled]:opacity-70"
+              >
+                Flattern
+              </SwitchLabel>
+            </Switch>
+            <label class="grid w-full max-w-xs gap-1.5">
+              <p class="disabled-next text-sm font-medium">
+                Export Name
+              </p>
+              <Select
+                fitViewport
+                placeholder="None"
+                disabled={!info.selectColumnEnable}
+                optionValue="value"
+                optionTextValue="name"
+                defaultValue={{
+                  name: "None",
+                  value: "",
+                }}
+                onChange={(v) => {
+                  setOption(
+                    "exportFileName",
+                    reconcile(
+                      optional(v.value) ?? undefined,
+                    ),
+                  );
+                }}
+                options={[
+                  { name: "None", value: "" },
+                  ...(appData.headers?.map((h) => ({
+                    name: h,
+                    value: h,
+                  })) ?? []),
+                ]}
+                itemComponent={(props) => (
+                  <SelectItem item={props.item}>
+                    {props.item.rawValue.name}
+                  </SelectItem>
+                )}
+              >
+                <SelectTrigger class="w-full max-w-xs">
+                  <SelectValue<Item>>
+                    {(state) => state.selectedOption().name}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent
+                  class="overflow-y-auto"
+                  style={{
+                    "max-height":
+                      "var(--kb-popper-content-available-height)",
+                    "max-width":
+                      "var(--kb-popper-content-available-width)",
+                  }}
+                />
+              </Select>
+            </label>
+
             <Drawer open={open()} onOpenChange={setOpen}>
-              <DrawerTrigger as={Button} variant="outline">
+              <DrawerTrigger
+                as={Button}
+                variant="outline"
+                class="max-w-xs"
+              >
                 Open Logger
               </DrawerTrigger>
               <DrawerContent class="container flex h-2/3 flex-col">
@@ -1104,7 +1242,7 @@ const App: Component = () => {
                 )}
               </Show>
               <p class="small muted">
-                This app can only be used in Chrome or Edge
+                This app only available in Chrome or Edge
                 after version 86, Opera after version 72.
               </p>
             </div>

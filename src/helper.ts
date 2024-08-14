@@ -1,3 +1,5 @@
+import { PDFFont } from "pdf-lib";
+
 /**
  * Convert valid value to string, invalid value will be null
  * @param v
