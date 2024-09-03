@@ -20,15 +20,12 @@ import {
   PDFDropdown,
   PDFField,
   PDFFont,
-  PDFHexString,
   PDFImage,
-  PDFName,
   PDFOperator,
   PDFOperatorNames,
   PDFOptionList,
   PDFRadioGroup,
   PDFSignature,
-  PDFString,
   PDFTextField,
   popGraphicsState,
   pushGraphicsState,
@@ -94,12 +91,14 @@ type Item = {
 };
 
 type AppOptions = {
+  // 数据索引开始
   start?: number;
   end?: number;
-  // 导出文件名
+  // 导出文件名跟随列
   exportFileName?: string;
-  // 忽略错误，继续执行
+  // 批量生成时忽略错误，继续生成
   skipError?: boolean;
+  // 导出时扁平化form表单
   flattern?: boolean;
 };
 
@@ -143,7 +142,7 @@ async function verifyPermission(
   return false;
 }
 
-function getFieldType(field: PDFField) {
+function getFieldTypeName(field: PDFField) {
   if (field instanceof PDFTextField) {
     return "PDFTextField";
   } else if (field instanceof PDFSignature) {
@@ -289,7 +288,7 @@ const App: Component = () => {
 
     for (const field of form.getFields()) {
       try {
-        switch (getFieldType(field)) {
+        switch (getFieldTypeName(field)) {
           case "PDFTextField": {
             const f = field as PDFTextField;
             const text = data[field.getName()];
@@ -502,7 +501,7 @@ const App: Component = () => {
   ): AsyncGenerator<[string, Uint8Array]> {
     for (const index in data) {
       const d = data[index];
-      let name = `${index}.pdf`;
+      let name = `${Date.now()}.pdf`;
       if (option.exportFileName) {
         name = `${d[option.exportFileName]}.pdf`;
       }
@@ -561,6 +560,7 @@ const App: Component = () => {
           );
       }
     }
+    console.info("generate task done");
   }
 
   async function handleGenerateFirst() {
@@ -576,7 +576,7 @@ const App: Component = () => {
       return;
     }
     console.info("start generating one file");
-    let name = `output.${Date.now()}.pdf`;
+    let name = `${Date.now()}.pdf`;
     try {
       const pdfBytes = await generateFile(data, buf);
       if (option.exportFileName) {
@@ -600,6 +600,7 @@ const App: Component = () => {
           err.message,
         );
     }
+    console.info("generate task done");
   }
 
   const [open, setOpen] = createSignal(false);
@@ -779,7 +780,7 @@ const App: Component = () => {
                         .getFields()
                         .map(
                           (f) =>
-                            `Type: ${getFieldType(f)} Name: ${f.getName()}`,
+                            `Type: ${getFieldTypeName(f)} Name: ${f.getName()}`,
                         ),
                     );
                   })}

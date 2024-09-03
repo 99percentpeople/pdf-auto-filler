@@ -23,9 +23,6 @@ importers:
       '@fontsource-variable/roboto-mono':
         specifier: ^5.0.19
         version: 5.0.19
-      '@fontsource/noto-sans':
-        specifier: ^5.0.22
-        version: 5.0.22
       '@kobalte/core':
         specifier: ^0.13.4
         version: 0.13.4(solid-js@1.8.19)
@@ -401,9 +398,6 @@ packages:
 
   '@fontsource-variable/roboto-mono@5.0.19':
     resolution: {integrity: sha512-EGHx+Av6qNZf1XUM69eE1dwG3vtZHTpRETlkgt9BoRcN0T9xG+Boo/TzznmhI40CLI1zwBjmglEIu2qNI462Vw==}
-
-  '@fontsource/noto-sans@5.0.22':
-    resolution: {integrity: sha512-PwjvKPGFbgpwfKjWZj1zeUvd7ExUW2AqHE9PF9ysAJ2gOuzIHWE6mEVIlchYif7WC2pQhn+g0w6xooCObVi+4A==}
 
   '@internationalized/date@3.5.5':
     resolution: {integrity: sha512-H+CfYvOZ0LTJeeLOqm19E3uj/4YjrmOFtBufDHPfvtI80hFAMqtrp7oCACpe4Cil5l8S0Qu/9dYfZc/5lY8WQQ==}
@@ -2114,8 +2108,6 @@ snapshots:
   '@fontsource-variable/inter@5.0.20': {}
 
   '@fontsource-variable/roboto-mono@5.0.19': {}
-
-  '@fontsource/noto-sans@5.0.22': {}
 
   '@internationalized/date@3.5.5':
     dependencies:

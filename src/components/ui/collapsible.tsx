@@ -29,7 +29,7 @@ export const CollapsibleContent = <
   return (
     <CollapsiblePrimitive.Content
       class={cn(
-        `animate-collapsible-up
+        `animate-collapsible-up overflow-hidden
         data-[expanded]:animate-collapsible-down`,
         local.class,
       )}

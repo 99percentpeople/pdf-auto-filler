@@ -30,7 +30,6 @@
     "@corvu/resizable": "^0.2.3",
     "@fontsource-variable/inter": "^5.0.20",
     "@fontsource-variable/roboto-mono": "^5.0.19",
-    "@fontsource/noto-sans": "^5.0.22",
     "@kobalte/core": "^0.13.4",
     "@pdf-lib/fontkit": "^1.1.1",
     "@solid-primitives/storage": "^3.8.0",
