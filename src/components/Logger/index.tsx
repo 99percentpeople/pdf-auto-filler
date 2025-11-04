@@ -23,6 +23,7 @@ export interface LoggerProviderProps extends ParentProps {
 }
 export interface LoggerContext {
   items: Accessor<LogItem[]>;
+  clear: () => void;
 }
 export type Level = "log" | "info" | "warn" | "error";
 const levels: Level[] = ["log", "info", "warn", "error"];
@@ -93,16 +94,31 @@ export const LoggerProvider: Component<
     distroy();
   });
 
+  const clear = () => {
+    setLogItems([]);
+  };
+
   return (
     <LoggerContext.Provider
       value={{
         items: logItems,
+        clear,
       }}
     >
       {local.children}
     </LoggerContext.Provider>
   );
 };
+
+export function useLogger(): LoggerContext {
+  const logger = useContext(LoggerContext);
+  if (!logger) {
+    throw new Error(
+      "useLogger must be used within a LoggerProvider",
+    );
+  }
+  return logger;
+}
 
 export const Logger: Component<LoggerProps> = (
   props: LoggerProps,

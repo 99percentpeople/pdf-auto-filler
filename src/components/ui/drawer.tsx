@@ -38,8 +38,8 @@ export const DrawerContent = <
   return (
     <DrawerPrimitive.Portal>
       <DrawerPrimitive.Overlay
-        class="fixed inset-0 z-50 data-[transitioning]:transition-colors
-          data-[transitioning]:duration-200"
+        class="fixed inset-0 z-50 data-transitioning:transition-colors
+          data-transitioning:duration-200"
         style={{
           "background-color": `hsl(var(--background) / ${0.8 * ctx.openPercentage()})`,
         }}
@@ -49,8 +49,8 @@ export const DrawerContent = <
           `fixed inset-x-0 bottom-0 z-50 mt-24 flex h-auto flex-col
           rounded-t-xl border bg-background after:absolute
           after:inset-x-0 after:top-full after:h-[50%]
-          after:bg-inherit data-[transitioning]:transition-transform
-          data-[transitioning]:duration-200 md:select-none`,
+          after:bg-inherit data-transitioning:transition-transform
+          data-transitioning:duration-200 md:select-none`,
           local.class,
         )}
         {...rest}

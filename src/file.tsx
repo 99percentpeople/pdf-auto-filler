@@ -1,17 +1,14 @@
 import {
-  Component,
   ComponentProps,
   createEffect,
   createSignal,
   For,
-  lazy,
   onMount,
   Ref,
   Show,
 } from "solid-js";
 import { get, set } from "idb-keyval";
 import { Button } from "./components/ui/button";
-import { makePersisted } from "@solid-primitives/storage";
 
 export type FileManageProps = Omit<
   ComponentProps<"div">,

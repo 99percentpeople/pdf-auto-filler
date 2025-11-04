@@ -5,6 +5,7 @@ import { viteSingleFile } from "vite-plugin-singlefile";
 import { resolve } from "path";
 import arraybuffer from "vite-plugin-arraybuffer";
 import { compression } from "vite-plugin-compression2";
+import tailwindcss from "@tailwindcss/vite";
 export default defineConfig({
   plugins: [
     /* 
@@ -18,6 +19,7 @@ export default defineConfig({
     }),
     arraybuffer(),
     compression(),
+    tailwindcss(),
   ],
   server: {
     port: 3000,

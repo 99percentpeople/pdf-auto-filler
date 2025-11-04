@@ -1,6 +1,7 @@
 import {
   batch,
   createEffect,
+  createMemo,
   createSignal,
   For,
   onMount,
@@ -14,17 +15,12 @@ import {
   degrees,
   drawImage,
   drawText,
-  PDFButton,
   PDFCheckBox,
   PDFDocument,
-  PDFDropdown,
-  PDFField,
   PDFFont,
   PDFImage,
   PDFOperator,
   PDFOperatorNames,
-  PDFOptionList,
-  PDFRadioGroup,
   PDFSignature,
   PDFTextField,
   popGraphicsState,
@@ -62,8 +58,9 @@ import { Input } from "./components/extends/input";
 import {
   Logger,
   LoggerProvider,
+  useLogger,
 } from "./components/Logger";
-import { ChevronsUpDown, Trash } from "lucide-solid";
+import { ChevronsUpDown, Trash2 } from "lucide-solid";
 import {
   Switch,
   SwitchControl,
@@ -84,83 +81,15 @@ import {
 } from "./components/ui/collapsible";
 import { CollapsibleTriggerProps } from "@kobalte/core/collapsible";
 import { makePersisted } from "@solid-primitives/storage";
-
-type Item = {
-  value: string;
-  name?: string;
-};
-
-type AppOptions = {
-  // 数据索引开始
-  start?: number;
-  end?: number;
-  // 导出文件名跟随列
-  exportFileName?: string;
-  // 批量生成时忽略错误，继续生成
-  skipError?: boolean;
-  // 导出时扁平化form表单
-  flattern?: boolean;
-};
-
-type AppData = {
-  font: File | null;
-  pdf: File | null;
-  fillData: Record<string, string>[] | null;
-  headers: string[] | null;
-  workDir: FileSystemDirectoryHandle | null;
-  imgDir: FileSystemDirectoryHandle | null;
-};
-
-type AppInfo = {
-  loading: boolean;
-  uploadEnable: boolean;
-  rangeEnable: boolean;
-  selectColumnEnable: boolean;
-  generateEnable: boolean;
-};
-
-async function verifyPermission(
-  fileHandle:
-    | FileSystemFileHandle
-    | FileSystemDirectoryHandle,
-  withWrite: boolean,
-): Promise<boolean> {
-  const opts: FileSystemHandlePermissionDescriptor = {};
-  if (withWrite) {
-    opts.mode = "readwrite";
-  }
-  if (
-    (await fileHandle.queryPermission(opts)) === "granted"
-  ) {
-    return true;
-  }
-  if (
-    (await fileHandle.requestPermission(opts)) === "granted"
-  ) {
-    return true;
-  }
-  return false;
-}
-
-function getFieldTypeName(field: PDFField) {
-  if (field instanceof PDFTextField) {
-    return "PDFTextField";
-  } else if (field instanceof PDFSignature) {
-    return "PDFSignature";
-  } else if (field instanceof PDFCheckBox) {
-    return "PDFCheckBox";
-  } else if (field instanceof PDFButton) {
-    return "PDFButton";
-  } else if (field instanceof PDFOptionList) {
-    return "PDFOptionList";
-  } else if (field instanceof PDFRadioGroup) {
-    return "PDFRadioGroup";
-  } else if (field instanceof PDFDropdown) {
-    return "PDFDropdown";
-  } else {
-    return undefined;
-  }
-}
+import {
+  AppData,
+  AppInfo,
+  AppOptions,
+  FieldItem,
+  getFieldTypeName,
+  verifyPermission,
+} from "./config";
+import { Separator } from "./components/ui/separator";
 
 const App: Component = () => {
   const [appData, setAppData] = createStore<AppData>({
@@ -185,6 +114,7 @@ const App: Component = () => {
     createStore<AppOptions>({
       start: 0,
       flattern: false,
+      exportFileName: "default",
     }),
     {
       storage: sessionStorage,
@@ -273,10 +203,9 @@ const App: Component = () => {
     if (font) {
       customFont = await pdfDoc.embedFont(
         await font.arrayBuffer(),
-      );
-    } else {
-      customFont = await pdfDoc.embedFont(
-        StandardFonts.TimesRoman,
+        {
+          subset: true,
+        },
       );
     }
 
@@ -285,7 +214,6 @@ const App: Component = () => {
     form.updateFieldAppearances = function () {
       return rawUpdateFieldAppearances(customFont);
     };
-
     for (const field of form.getFields()) {
       try {
         switch (getFieldTypeName(field)) {
@@ -483,15 +411,43 @@ const App: Component = () => {
             }
             break;
           }
+          case "PDFCheckBox": {
+            const f = field as PDFCheckBox;
+            const value = data[field.getName()];
+            if (
+              value === "true" ||
+              value === "1" ||
+              value === "yes" ||
+              value === "是"
+            ) {
+              f.check();
+            } else {
+              f.uncheck();
+            }
+            break;
+          }
         }
       } catch (err) {
         throw err;
       }
     }
 
-    if (option.flattern) form.flatten();
+    if (option.flattern) {
+      try {
+        form.flatten();
+      } catch (err) {
+        console.error(
+          "Error flattening form:",
+          err instanceof Error
+            ? err.message
+            : "unknown error",
+        );
+      }
+    }
 
-    const pdfBytes = await pdfDoc.save();
+    const pdfBytes = await pdfDoc.save({
+      useObjectStreams: true,
+    });
     return pdfBytes;
   }
 
@@ -501,9 +457,14 @@ const App: Component = () => {
   ): AsyncGenerator<[string, Uint8Array]> {
     for (const index in data) {
       const d = data[index];
-      let name = `${Date.now()}.pdf`;
-      if (option.exportFileName) {
+      let name;
+      if (
+        option.exportFileName &&
+        option.exportFileName !== "default"
+      ) {
         name = `${d[option.exportFileName]}.pdf`;
+      } else {
+        name = `generated_${index + 1}.pdf`;
       }
       console.log(`start generating file: "${name}"`);
       try {
@@ -524,15 +485,49 @@ const App: Component = () => {
     }
   }
 
-  async function handleGenerate() {
+  async function writeToNewFile(
+    dirHandle: FileSystemDirectoryHandle,
+    name: string,
+    bytes: Uint8Array,
+  ) {
+    try {
+      const fileHandle = await dirHandle.getFileHandle(
+        name,
+        { create: true },
+      );
+      const writableStream =
+        await fileHandle.createWritable();
+      // @ts-ignore
+      await writableStream.write(bytes);
+      await writableStream.close();
+      console.log(
+        `file "${name}" saved to dir "${dirHandle.name}"`,
+      );
+    } catch (err) {
+      console.log(
+        `An error occured when generating file: "${name}"`,
+        err instanceof Error
+          ? err.message
+          : "unknown error",
+      );
+    }
+  }
+
+  async function handleGenerate(
+    startIndex?: number,
+    endIndex?: number,
+  ) {
     setOpen(true);
     const buf = await appData.pdf?.arrayBuffer();
-    const handle = appData.workDir;
+    const dirHandle = appData.workDir;
     let json = appData.fillData;
-    if (!buf || !json || !handle) return;
+    if (!buf || !json || !dirHandle) return;
 
-    if (option.start || option.end) {
-      json = json.slice(option.start, option.end);
+    if (
+      startIndex !== undefined ||
+      endIndex !== undefined
+    ) {
+      json = json.slice(startIndex, endIndex);
     }
     console.info(`start generating ${json.length} files`);
 
@@ -540,25 +535,7 @@ const App: Component = () => {
       json,
       buf,
     )) {
-      try {
-        const fileHandle = await handle.getFileHandle(
-          name,
-          { create: true },
-        );
-        const writableStream =
-          await fileHandle.createWritable();
-        await writableStream.write(bytes);
-        await writableStream.close();
-        console.log(
-          `file "${name}" saved to dir "${handle.name}"`,
-        );
-      } catch (err) {
-        if (err instanceof Error)
-          console.log(
-            `An error occured when generating file: "${name}"`,
-            err.message,
-          );
-      }
+      writeToNewFile(dirHandle, name, bytes);
     }
     console.info("generate task done");
   }
@@ -576,30 +553,20 @@ const App: Component = () => {
       return;
     }
     console.info("start generating one file");
-    let name = `${Date.now()}.pdf`;
-    try {
-      const pdfBytes = await generateFile(data, buf);
-      if (option.exportFileName) {
-        name = `${data[option.exportFileName]}.pdf`;
-      }
+    const pdfBytes = await generateFile(data, buf);
 
-      const fileHandle = await handle.getFileHandle(name, {
-        create: true,
-      });
-      const writableStream =
-        await fileHandle.createWritable();
-      await writableStream.write(pdfBytes);
-      await writableStream.close();
-      console.log(
-        `file "${name}" saved to dir "${handle.name}"`,
-      );
-    } catch (err) {
-      if (err instanceof Error)
-        console.error(
-          `An error occured when generating file: "${name}"`,
-          err.message,
-        );
+    let name;
+    if (
+      option.exportFileName &&
+      option.exportFileName !== "default"
+    ) {
+      name = `${data[option.exportFileName]}.pdf`;
+    } else {
+      name = `generated_${index + 1}.pdf`;
     }
+
+    writeToNewFile(handle, name, pdfBytes);
+
     console.info("generate task done");
   }
 
@@ -629,6 +596,50 @@ const App: Component = () => {
     } as T;
   }
 
+  async function onXlsxUpload(file: File) {
+    const ab = await file.arrayBuffer();
+    const workbook = read(ab);
+    const sheetName = workbook.SheetNames[0];
+    const sheet = workbook.Sheets[sheetName];
+
+    const json = utils.sheet_to_json(sheet, {
+      raw: false,
+      defval: "",
+      blankrows: false,
+    });
+    console.log(
+      "first row of data:",
+      JSON.stringify(json[0], null, 2),
+    );
+    setAppData(
+      "fillData",
+      json as Record<string, string>[],
+    );
+
+    const headers = [];
+    const columnCount =
+      utils.decode_range(sheet["!ref"]!).e.c + 1;
+    for (let i = 0; i < columnCount; ++i) {
+      headers[i] = sheet[`${utils.encode_col(i)}1`].v;
+    }
+    console.log(
+      "xlsx headers:",
+      JSON.stringify(headers, null, 2),
+    );
+
+    setAppData("headers", headers);
+  }
+
+  const availableExportNames = createMemo(() => {
+    return [
+      { name: "默认（索引）", value: "default" },
+      ...(appData.headers?.map((h) => ({
+        name: h,
+        value: h,
+      })) ?? []),
+    ];
+  });
+
   return (
     <LoggerProvider timestamp>
       <Resizable class="h-full w-full rounded-lg border">
@@ -638,11 +649,11 @@ const App: Component = () => {
           class="relative overflow-y-auto"
         >
           <div class="absolute inset-2 flex flex-col gap-2">
-            <h2 class="h2">Data</h2>
+            <h3 class="h3">数据</h3>
             <div class="grid gap-1.5">
               <label class="grid w-full max-w-xs gap-1.5">
                 <p class="disabled-next text-sm font-medium">
-                  Upload Xlsx
+                  上传Excel文件
                 </p>
                 <Input
                   type="file"
@@ -652,45 +663,7 @@ const App: Component = () => {
                     const file =
                       e.currentTarget.files?.item(0);
                     if (!file) return;
-
-                    const ab = await file.arrayBuffer();
-                    const workbook = read(ab);
-                    const sheetName =
-                      workbook.SheetNames[0];
-                    const sheet =
-                      workbook.Sheets[sheetName];
-
-                    const json = utils.sheet_to_json(
-                      sheet,
-                      {
-                        raw: false,
-                        defval: "",
-                        blankrows: false,
-                      },
-                    );
-                    console.log(
-                      "first row of data:",
-                      JSON.stringify(json[0], null, 2),
-                    );
-                    setAppData(
-                      "fillData",
-                      json as Record<string, string>[],
-                    );
-
-                    const headers = [];
-                    const columnCount =
-                      utils.decode_range(sheet["!ref"]!).e
-                        .c + 1;
-                    for (let i = 0; i < columnCount; ++i) {
-                      headers[i] =
-                        sheet[`${utils.encode_col(i)}1`].v;
-                    }
-                    console.log(
-                      "xlsx headers:",
-                      JSON.stringify(headers, null, 2),
-                    );
-
-                    setAppData("headers", headers);
+                    await onXlsxUpload(file);
                   })}
                 />
               </label>
@@ -747,7 +720,7 @@ const App: Component = () => {
                         });
                       }}
                     >
-                      <Trash class="size-4" />
+                      <Trash2 />
                     </Button>
                   </div>
                 )}
@@ -756,7 +729,7 @@ const App: Component = () => {
             <div class="grid w-full gap-1.5">
               <label class="flex w-full max-w-xs flex-col gap-1.5">
                 <p class="disabled-next text-sm font-medium">
-                  Upload PDF
+                  上传PDF模板
                 </p>
                 <Input
                   type="file"
@@ -800,7 +773,7 @@ const App: Component = () => {
                         setAppData("pdf", null)
                       }
                     >
-                      <Trash class="size-4" />
+                      <Trash2 />
                     </Button>
                   </div>
                 )}
@@ -808,10 +781,10 @@ const App: Component = () => {
             </div>
             <div class="flex w-full max-w-xs flex-col gap-1.5">
               <p
-                class="text-sm font-medium data-[disabled]:cursor-not-allowed
-                  data-[disabled]:opacity-70"
+                class="data-disabled:cursor-not-allowed data-disabled:opacity-70
+                  text-sm font-medium"
               >
-                Work Directory
+                工作目录
               </p>
               <Button
                 draggable="true"
@@ -863,7 +836,7 @@ const App: Component = () => {
                   }
                 })}
               >
-                {appData.workDir ? `Change` : `Open`}
+                {appData.workDir ? `切换` : `打开选择器`}
               </Button>
               <Show when={appData.workDir}>
                 {(handle) => (
@@ -879,7 +852,7 @@ const App: Component = () => {
                         setAppData("workDir", null)
                       }
                     >
-                      <Trash class="size-4" />
+                      <Trash2 />
                     </Button>
                   </div>
                 )}
@@ -888,10 +861,10 @@ const App: Component = () => {
 
             <div class="flex w-full max-w-xs flex-col gap-1.5">
               <p
-                class="text-sm font-medium data-[disabled]:cursor-not-allowed
-                  data-[disabled]:opacity-70"
+                class="data-disabled:cursor-not-allowed data-disabled:opacity-70
+                  text-sm font-medium"
               >
-                Image Directory
+                图片目录
               </p>
               <Button
                 draggable="true"
@@ -943,7 +916,7 @@ const App: Component = () => {
                   }
                 })}
               >
-                {appData.imgDir ? "Change" : "Open"}
+                {appData.imgDir ? "切换" : "打开选择器"}
               </Button>
               <Show when={appData.imgDir}>
                 {(handle) => (
@@ -959,7 +932,7 @@ const App: Component = () => {
                         setAppData("imgDir", null)
                       }
                     >
-                      <Trash class="size-4" />
+                      <Trash2 />
                     </Button>
                   </div>
                 )}
@@ -968,25 +941,30 @@ const App: Component = () => {
 
             <div class="w-full max-w-xs">
               <p
-                class="text-sm font-medium data-[disabled]:cursor-not-allowed
-                  data-[disabled]:opacity-70"
+                class="data-disabled:cursor-not-allowed data-disabled:opacity-70
+                  text-sm font-medium"
               >
-                Generate
+                开始生成
               </p>
               <div class="flex gap-1.5">
                 <Button
                   disabled={!info.generateEnable}
-                  onClick={loadingWrapper(
-                    handleGenerateFirst,
+                  onClick={loadingWrapper(() =>
+                    handleGenerateFirst(),
                   )}
                 >
-                  Generate One
+                  生成一份
                 </Button>
                 <Button
                   disabled={!info.generateEnable}
-                  onClick={loadingWrapper(handleGenerate)}
+                  onClick={loadingWrapper(() =>
+                    handleGenerate(
+                      option?.start,
+                      option?.end,
+                    ),
+                  )}
                 >
-                  Generate
+                  批量生成
                 </Button>
               </div>
             </div>
@@ -999,12 +977,12 @@ const App: Component = () => {
           class="relative overflow-y-auto"
         >
           <div class="absolute inset-2 flex flex-col gap-2">
-            <h2 class="h2">Options</h2>
+            <h3 class="h3">生成设置</h3>
 
             <div class="flex flex-col items-start gap-1.5">
               <label class="grid w-full max-w-xs gap-1.5">
                 <p class="disabled-next text-sm font-medium">
-                  Custom Font
+                  自定义字体
                 </p>
                 <Input
                   type="file"
@@ -1028,9 +1006,7 @@ const App: Component = () => {
                     class="flex items-center gap-1.5 rounded-md border border-input p-1
                       shadow-sm"
                   >
-                    <p class="text-sm">{`Use custom font: "${
-                      font().name
-                    }"`}</p>
+                    <p class="text-sm">{`使用自定义字体: "${font().name}"`}</p>
                     <Button
                       disabled={info.loading}
                       onClick={(e) => {
@@ -1040,7 +1016,7 @@ const App: Component = () => {
                       variant="destructive"
                       size="icon"
                     >
-                      <Trash class="size-4" />
+                      <Trash2 />
                     </Button>
                   </div>
                 )}
@@ -1062,9 +1038,7 @@ const App: Component = () => {
               }
               disabled={!info.rangeEnable}
             >
-              <NumberFieldLabel>
-                Start Index
-              </NumberFieldLabel>
+              <NumberFieldLabel>开始索引</NumberFieldLabel>
               <div class="flex w-full gap-1">
                 <NumberFieldGroup class="flex-1">
                   <NumberFieldDecrementTrigger aria-label="Decrement" />
@@ -1075,7 +1049,7 @@ const App: Component = () => {
                   disabled={!info.rangeEnable}
                   onClick={() => setOption("start", 0)}
                 >
-                  First
+                  置0
                 </Button>
               </div>
             </NumberField>
@@ -1095,7 +1069,7 @@ const App: Component = () => {
               }
               disabled={!info.rangeEnable}
             >
-              <NumberFieldLabel>End Index</NumberFieldLabel>
+              <NumberFieldLabel>结束索引</NumberFieldLabel>
               <div class="flex w-full gap-1">
                 <NumberFieldGroup class="flex-1">
                   <NumberFieldDecrementTrigger aria-label="Decrement" />
@@ -1111,7 +1085,7 @@ const App: Component = () => {
                     )
                   }
                 >
-                  Last
+                  最后一项
                 </Button>
               </div>
             </NumberField>
@@ -1127,11 +1101,10 @@ const App: Component = () => {
                 <SwitchThumb />
               </SwitchControl>
               <SwitchLabel
-                class="text-sm font-medium leading-none
-                  data-[disabled]:cursor-not-allowed
-                  data-[disabled]:opacity-70"
+                class="data-disabled:cursor-not-allowed data-disabled:opacity-70
+                  text-sm font-medium leading-none"
               >
-                Skip Error
+                跳过错误
               </SwitchLabel>
             </Switch>
             <Switch
@@ -1146,27 +1119,23 @@ const App: Component = () => {
                 <SwitchThumb />
               </SwitchControl>
               <SwitchLabel
-                class="text-sm font-medium leading-none
-                  data-[disabled]:cursor-not-allowed
-                  data-[disabled]:opacity-70"
+                class="data-disabled:cursor-not-allowed data-disabled:opacity-70
+                  text-sm font-medium leading-none"
               >
-                Flattern
+                扁平化表单（生成后不可编辑）
               </SwitchLabel>
             </Switch>
             <label class="grid w-full max-w-xs gap-1.5">
               <p class="disabled-next text-sm font-medium">
-                Export Name
+                导出文件名称
               </p>
               <Select
                 fitViewport
-                placeholder="None"
                 disabled={!info.selectColumnEnable}
                 optionValue="value"
                 optionTextValue="name"
-                defaultValue={{
-                  name: "None",
-                  value: "",
-                }}
+                placeholder="选择列作为文件名"
+                defaultValue={availableExportNames()[0]}
                 onChange={(v) => {
                   setOption(
                     "exportFileName",
@@ -1175,13 +1144,7 @@ const App: Component = () => {
                     ),
                   );
                 }}
-                options={[
-                  { name: "None", value: "" },
-                  ...(appData.headers?.map((h) => ({
-                    name: h,
-                    value: h,
-                  })) ?? []),
-                ]}
+                options={availableExportNames()}
                 itemComponent={(props) => (
                   <SelectItem item={props.item}>
                     {props.item.rawValue.name}
@@ -1189,7 +1152,7 @@ const App: Component = () => {
                 )}
               >
                 <SelectTrigger class="w-full max-w-xs">
-                  <SelectValue<Item>>
+                  <SelectValue<FieldItem>>
                     {(state) => state.selectedOption().name}
                   </SelectValue>
                 </SelectTrigger>
@@ -1205,34 +1168,11 @@ const App: Component = () => {
               </Select>
             </label>
 
-            <Drawer open={open()} onOpenChange={setOpen}>
-              <DrawerTrigger
-                as={Button}
-                variant="outline"
-                class="max-w-xs"
-              >
-                Open Logger
-              </DrawerTrigger>
-              <DrawerContent class="container flex h-2/3 flex-col">
-                <DrawerHeader>
-                  <DrawerLabel>
-                    <Show
-                      when={info.loading}
-                      fallback={<>Logs</>}
-                    >
-                      Logging
-                    </Show>
-                  </DrawerLabel>
-                </DrawerHeader>
-                <div class="relative w-full flex-1">
-                  <Logger
-                    data-corvu-no-drag
-                    class="absolute inset-0 select-text overflow-y-auto
-                      whitespace-pre-wrap font-mono text-xs"
-                  />
-                </div>
-              </DrawerContent>
-            </Drawer>
+            <LoggerDrawer
+              logging={info.loading}
+              open={open()}
+              setOpen={setOpen}
+            />
             <Show when={info.loading}>
               <h1 class="h3">Loading</h1>
             </Show>
@@ -1253,5 +1193,46 @@ const App: Component = () => {
     </LoggerProvider>
   );
 };
+
+function LoggerDrawer(props: {
+  logging: boolean;
+  open: boolean;
+  setOpen: (open: boolean) => void;
+}) {
+  const { clear } = useLogger();
+  return (
+    <Drawer open={props.open} onOpenChange={props.setOpen}>
+      <DrawerTrigger
+        as={Button}
+        variant="outline"
+        class="max-w-xs"
+      >
+        日志
+      </DrawerTrigger>
+      <DrawerContent class="container mx-auto flex h-2/3 flex-col">
+        <DrawerHeader>
+          <div class="flex w-full items-center justify-between">
+            <h3 class="h3">日志</h3>
+            <Button
+              variant="destructive"
+              size="icon"
+              onClick={clear}
+            >
+              <Trash2 />
+            </Button>
+          </div>
+        </DrawerHeader>
+        <Separator />
+        <div class="relative w-full flex-1">
+          <Logger
+            data-corvu-no-drag
+            class="absolute inset-0 select-text overflow-y-auto
+              whitespace-pre-wrap font-mono text-xs"
+          />
+        </div>
+      </DrawerContent>
+    </Drawer>
+  );
+}
 
 export default App;
