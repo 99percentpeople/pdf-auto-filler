@@ -19,7 +19,11 @@ export default defineConfig({
     }),
     arraybuffer(),
     compression(),
-    tailwindcss(),
+    tailwindcss({
+      optimize: {
+        minify: true,
+      },
+    }),
   ],
   server: {
     port: 3000,
@@ -27,6 +31,13 @@ export default defineConfig({
   build: {
     target: "esnext",
     minify: true,
+    cssMinify: true,
+    cssCodeSplit: false,
+    sourcemap: false,
+  },
+  esbuild: {
+    drop: ["debugger"],
+    legalComments: "none",
   },
   define: {
     BUILD_DATE:

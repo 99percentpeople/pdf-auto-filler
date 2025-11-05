@@ -1,5 +1,3 @@
-import { PDFButton, PDFCheckBox, PDFDropdown, PDFField, PDFOptionList, PDFRadioGroup, PDFSignature, PDFTextField } from "pdf-lib";
-
 export type FieldItem = {
     value: string;
     name?: string;
@@ -17,11 +15,16 @@ export type AppOptions = {
     flattern?: boolean;
 };
 
+export type XlsxData = {
+    file: File;
+    headers: string[];
+    data: Record<string, string>[];
+};
+
 export type AppData = {
     font: File | null;
     pdf: File | null;
-    fillData: Record<string, string>[] | null;
-    headers: string[] | null;
+    xlsxData: XlsxData | null;
     workDir: FileSystemDirectoryHandle | null;
     imgDir: FileSystemDirectoryHandle | null;
 };
@@ -58,22 +61,3 @@ export async function verifyPermission(
     return false;
 }
 
-export function getFieldTypeName(field: PDFField): string | undefined {
-    if (field instanceof PDFTextField) {
-        return "PDFTextField";
-    } else if (field instanceof PDFSignature) {
-        return "PDFSignature";
-    } else if (field instanceof PDFCheckBox) {
-        return "PDFCheckBox";
-    } else if (field instanceof PDFButton) {
-        return "PDFButton";
-    } else if (field instanceof PDFOptionList) {
-        return "PDFOptionList";
-    } else if (field instanceof PDFRadioGroup) {
-        return "PDFRadioGroup";
-    } else if (field instanceof PDFDropdown) {
-        return "PDFDropdown";
-    } else {
-        return undefined;
-    }
-}

@@ -29,6 +29,7 @@
   },
   "dependencies": {
     "@ark-ui/solid": "^3.6.2",
+    "@cantoo/pdf-lib": "^2.5.3",
     "@corvu/drawer": "^0.2.2",
     "@corvu/resizable": "^0.2.3",
     "@fontsource-variable/inter": "^5.0.20",
@@ -45,7 +46,6 @@
     "localforage": "^1.10.0",
     "lucide-solid": "^0.427.0",
     "npm": "^10.8.2",
-    "pdf-lib": "^1.17.1",
     "solid-js": "^1.8.11",
     "tailwind-merge": "^2.4.0",
     "tailwindcss-animate": "^1.0.7",

@@ -3,6 +3,8 @@ import {
   Component,
   ComponentProps,
   createContext,
+  createEffect,
+  createMemo,
   createSignal,
   For,
   onCleanup,
@@ -11,7 +13,7 @@ import {
   splitProps,
   useContext,
 } from "solid-js";
-
+import { createVirtualizer } from "@tanstack/solid-virtual";
 import { cn } from "@/libs/cn";
 import "./index.css";
 export interface LoggerProps
@@ -63,11 +65,19 @@ export const LoggerProvider: Component<
 
   function logToDOM(level: Level, messages: any[]): void {
     let formattedMessage = messages
-      .map((msg) =>
-        typeof msg === "object"
-          ? JSON.stringify(msg, null, 2)
-          : msg,
-      )
+      .map((msg) => {
+        if (msg instanceof Error) {
+          return msg.stack || msg.message;
+        } else if (typeof msg === "object") {
+          try {
+            return JSON.stringify(msg);
+          } catch (e) {
+            return String(msg);
+          }
+        } else {
+          return String(msg);
+        }
+      })
       .join(" ");
     if (local.timestamp) {
       const timestamp = new Date().toLocaleString();
@@ -123,29 +133,29 @@ export function useLogger(): LoggerContext {
 export const Logger: Component<LoggerProps> = (
   props: LoggerProps,
 ) => {
-  const logger = useContext(LoggerContext);
+  const logger = useLogger();
   const [local, rest] = splitProps(props, ["class"]);
   let [containerRef, setContainerRef] =
     createSignal<HTMLDivElement | null>(null);
 
   let observer: MutationObserver | undefined;
 
-  onMount(() => {
-    const container = containerRef();
-    if (container) {
-      container.scrollTop = container.scrollHeight;
-      observer = new MutationObserver(function (
-        mutationsList,
-      ) {
-        for (let mutation of mutationsList) {
-          if (mutation.type === "childList") {
-            container.scrollTop = container.scrollHeight;
-          }
-        }
+  const count = createMemo(
+    () => logger?.items().length || 0,
+  );
+  const virtualizer = createVirtualizer({
+    get count() {
+      requestAnimationFrame(() => {
+        virtualizer.scrollToIndex(count() - 1);
       });
-      observer.observe(container, { childList: true });
-    }
+      return count();
+    },
+    getScrollElement: () => containerRef(),
+    estimateSize: () => 45,
   });
+
+  const items = virtualizer.getVirtualItems();
+
 
   onCleanup(() => {
     observer?.disconnect();
@@ -157,11 +167,48 @@ export const Logger: Component<LoggerProps> = (
       class={cn("logger overflow-y-auto", local.class)}
       {...rest}
     >
-      <For each={logger?.items()}>
-        {(log) => (
-          <div data-level={log.level}>{log.message}</div>
-        )}
-      </For>
+      <div
+        style={{
+          height: `${virtualizer.getTotalSize()}px`,
+          width: "100%",
+          position: "relative",
+        }}
+      >
+        <div
+          style={{
+            position: "absolute",
+            top: 0,
+            left: 0,
+            width: "100%",
+            transform: `translateY(${items[0]?.start ?? 0}px)`,
+          }}
+        >
+          <For
+            each={items.map(
+              (v) => [v, logger.items()[v.index]] as const,
+            )}
+          >
+            {([virtualRow, log]) => (
+              <div
+                ref={(el) =>
+                  queueMicrotask(() =>
+                    virtualizer.measureElement(el),
+                  )
+                }
+                data-index={virtualRow.index}
+                data-level={log.level}
+                class={
+                  virtualRow.index % 2 === 0
+                    ? "odd"
+                    : "even"
+                }
+              >
+                {log.message}
+              </div>
+            )}
+          </For>
+        </div>
+      </div>
     </div>
   );
 };

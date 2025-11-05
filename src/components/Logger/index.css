@@ -1,7 +1,7 @@
 @reference "../../index.css";
 
 .logger {
-  & * {
+  & .odd {
     &[data-level="info"] {
       @apply bg-cyan-500/10;
     }
@@ -19,7 +19,7 @@
     }
   }
 
-  & :nth-child(even) {
+  & .even {
     &[data-level="info"] {
       @apply bg-cyan-500/20;
     }

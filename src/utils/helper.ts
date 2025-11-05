@@ -1,4 +1,3 @@
-import { PDFFont } from "pdf-lib";
 
 /**
  * Convert valid value to string, invalid value will be null
@@ -17,3 +16,4 @@ export const optional = <
   else if (v instanceof Date) return v;
   return null;
 };
+

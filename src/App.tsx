@@ -1,5 +1,5 @@
+import "./App.css";
 import {
-  batch,
   createEffect,
   createMemo,
   createSignal,
@@ -9,29 +9,16 @@ import {
   type Component,
 } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
-import "./App.css";
 import {
-  asPDFName,
-  degrees,
-  drawImage,
-  drawText,
   PDFCheckBox,
   PDFDocument,
   PDFFont,
-  PDFImage,
-  PDFOperator,
-  PDFOperatorNames,
   PDFSignature,
   PDFTextField,
-  popGraphicsState,
-  pushGraphicsState,
-  rgb,
-  StandardFonts,
-} from "pdf-lib";
+} from "@cantoo/pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
 import { read, utils } from "xlsx";
-import { optional } from "./helper";
-
+import { optional } from "./utils/helper";
 import { Button } from "@/components/ui/button";
 import {
   Resizable,
@@ -60,7 +47,7 @@ import {
   LoggerProvider,
   useLogger,
 } from "./components/Logger";
-import { ChevronsUpDown, Trash2 } from "lucide-solid";
+import { Trash2 } from "lucide-solid";
 import {
   Switch,
   SwitchControl,
@@ -71,32 +58,36 @@ import {
   Drawer,
   DrawerContent,
   DrawerHeader,
-  DrawerLabel,
   DrawerTrigger,
 } from "./components/ui/drawer";
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "./components/ui/collapsible";
-import { CollapsibleTriggerProps } from "@kobalte/core/collapsible";
 import { makePersisted } from "@solid-primitives/storage";
 import {
   AppData,
   AppInfo,
   AppOptions,
   FieldItem,
-  getFieldTypeName,
   verifyPermission,
 } from "./config";
 import { Separator } from "./components/ui/separator";
+import {
+  fillCheckBox,
+  fillSignature,
+  fillTextField,
+  getFieldTypeName,
+} from "./utils/pdf";
+import { Badge } from "./components/ui/badge";
+import {
+  compact,
+  consume,
+  mapConcurrent,
+  pipe,
+} from "./utils/iter-tools";
 
 const App: Component = () => {
   const [appData, setAppData] = createStore<AppData>({
     font: null,
     pdf: null,
-    fillData: null,
-    headers: null,
+    xlsxData: null,
     workDir: null,
     imgDir: null,
   });
@@ -174,7 +165,7 @@ const App: Component = () => {
   });
 
   createEffect(() => {
-    const data = appData.fillData;
+    const data = appData.xlsxData?.data;
     setInfo("rangeEnable", !!data && !info.loading);
     setInfo("selectColumnEnable", !!data && !info.loading);
   });
@@ -185,7 +176,7 @@ const App: Component = () => {
       "generateEnable",
       !info.loading &&
         !!handle &&
-        !!appData.fillData &&
+        !!appData.xlsxData?.data &&
         !!appData.pdf,
     );
   });
@@ -197,237 +188,54 @@ const App: Component = () => {
     const pdfDoc = await PDFDocument.load(pdfBuf);
     const font = customFontFile();
     const form = pdfDoc.getForm();
-    let customFont: PDFFont;
+    let customFont: PDFFont | null = null;
 
     pdfDoc.registerFontkit(fontkit);
     if (font) {
-      customFont = await pdfDoc.embedFont(
+      const embedFont = await pdfDoc.embedFont(
         await font.arrayBuffer(),
         {
           subset: true,
         },
       );
+      customFont = embedFont;
+      const rawUpdateFieldAppearances =
+        form.updateFieldAppearances.bind(form);
+      form.updateFieldAppearances = function () {
+        return rawUpdateFieldAppearances(embedFont);
+      };
     }
 
-    const rawUpdateFieldAppearances =
-      form.updateFieldAppearances.bind(form);
-    form.updateFieldAppearances = function () {
-      return rawUpdateFieldAppearances(customFont);
-    };
     for (const field of form.getFields()) {
+      const text = data[field.getName()];
+      if (!text) continue;
       try {
         switch (getFieldTypeName(field)) {
           case "PDFTextField": {
-            const f = field as PDFTextField;
-            const text = data[field.getName()];
-            if (text) {
-              if (text.startsWith("file://")) {
-                const filename = text.replace(
-                  /^file:\/\//,
-                  "",
-                );
-                console.log(`get file ${filename}`);
-              } else {
-                f.setText(text);
-                console.log(
-                  "field",
-                  `"${f.getName()}"`,
-                  "filling with text",
-                  `"${f.getText()}"`,
-                );
-              }
-            }
+            fillTextField(field as PDFTextField, text);
             break;
           }
           case "PDFSignature": {
-            const sig = field as PDFSignature;
-
-            const text = data[field.getName()];
-
-            if (text && text.startsWith("file://")) {
-              const filename = text.replace(
-                /^file:\/\//,
-                "",
-              );
-              console.log(`trying to get file ${filename}`);
-              if (!appData.imgDir) {
-                throw Error(`imgDir is required`);
-              }
-              const imgHandle =
-                await appData.imgDir?.getFileHandle(
-                  filename,
-                );
-              if (!imgHandle) {
-                throw Error(
-                  `${filename} not found in ${appData.imgDir.name}`,
-                );
-              }
-
-              const file = await imgHandle.getFile();
-              let pdfLibSigImg: PDFImage | undefined;
-              if (file.type === "image/jpeg") {
-                pdfLibSigImg = await pdfDoc.embedJpg(
-                  await file.arrayBuffer(),
-                );
-              } else if (file.type === "image/png") {
-                pdfLibSigImg = await pdfDoc.embedPng(
-                  await file.arrayBuffer(),
-                );
-              }
-
-              if (!pdfLibSigImg) {
-                throw Error(`${file.type} is not support`);
-              }
-
-              sig.acroField
-                .getWidgets()
-                .forEach((widget) => {
-                  console.log(
-                    `drawing ${file.name} to field ${field.getName()}`,
-                    `Rect: ${JSON.stringify(widget.getRectangle())}`,
-                  );
-                  const { context } = widget.dict;
-                  const { width, height } =
-                    widget.getRectangle();
-
-                  const appearance = [
-                    ...drawImage(filename, {
-                      x: 0,
-                      y: 0,
-                      width: width,
-                      height: height,
-                      rotate: degrees(0),
-                      xSkew: degrees(0),
-                      ySkew: degrees(0),
-                    }),
-                  ];
-
-                  const stream = context.formXObject(
-                    appearance,
-                    {
-                      Resources: {
-                        XObject: {
-                          [filename]: pdfLibSigImg.ref,
-                        },
-                      },
-                      BBox: context.obj([
-                        0,
-                        0,
-                        width,
-                        height,
-                      ]),
-                      Matrix: context.obj([
-                        1, 0, 0, 1, 0, 0,
-                      ]),
-                    },
-                  );
-                  const streamRef =
-                    context.register(stream);
-
-                  widget.setNormalAppearance(streamRef);
-                });
-            } else {
-              sig.acroField
-                .getWidgets()
-                .forEach((widget) => {
-                  const { context } = widget.dict;
-                  const { width, height } =
-                    widget.getRectangle();
-                  console.log(
-                    `drawing text "${text}" to field ${field.getName()}`,
-                    `Rect: ${JSON.stringify(widget.getRectangle())}`,
-                  );
-                  const fontSize =
-                    customFont.sizeAtHeight(height);
-                  const calcWidth =
-                    customFont.widthOfTextAtSize(
-                      text,
-                      fontSize,
-                    );
-                  const ratio = width / calcWidth;
-                  const calcSize = Math.min(
-                    fontSize,
-                    fontSize * ratio,
-                  );
-                  const fixedWidth =
-                    customFont.widthOfTextAtSize(
-                      text,
-                      calcSize,
-                    );
-
-                  const appearance = [
-                    PDFOperator.of(
-                      PDFOperatorNames.BeginMarkedContent,
-                      [asPDFName("Tx")],
-                    ),
-                    pushGraphicsState(),
-                    ...drawText(
-                      customFont.encodeText(text),
-                      {
-                        x: (width - fixedWidth) / 2,
-                        y: (height - calcSize) / 2,
-                        color: rgb(0, 0, 0),
-                        font: customFont.name,
-                        size: calcSize,
-                        rotate: degrees(0),
-                        xSkew: degrees(0),
-                        ySkew: degrees(0),
-                      },
-                    ),
-                    popGraphicsState(),
-                    PDFOperator.of(
-                      PDFOperatorNames.EndMarkedContent,
-                    ),
-                  ];
-                  const stream = context.contentStream(
-                    appearance,
-                    {
-                      BBox: context.obj([
-                        0,
-                        0,
-                        width,
-                        height,
-                      ]),
-                      Resources: {
-                        Font: {
-                          [customFont.name]: customFont.ref,
-                        },
-                      },
-                      Matrix: context.obj([
-                        1, 0, 0, 1, 0, 0,
-                      ]),
-                    },
-                  );
-
-                  const streamRef =
-                    context.register(stream);
-
-                  widget.setNormalAppearance(streamRef);
-
-                  // console.warn(
-                  //   `sign ${field.getName()} with text is not supported yet`,
-                  // );
-                });
-            }
+            await fillSignature(
+              field as PDFSignature,
+              text,
+              appData.imgDir,
+              customFont,
+            );
             break;
           }
           case "PDFCheckBox": {
-            const f = field as PDFCheckBox;
-            const value = data[field.getName()];
-            if (
-              value === "true" ||
-              value === "1" ||
-              value === "yes" ||
-              value === "是"
-            ) {
-              f.check();
-            } else {
-              f.uncheck();
-            }
+            fillCheckBox(field as PDFCheckBox, text);
             break;
           }
         }
       } catch (err) {
+        console.error(
+          `Error filling field "${field.getName()}":`,
+          err instanceof Error
+            ? err.message
+            : "unknown error",
+        );
         throw err;
       }
     }
@@ -442,6 +250,7 @@ const App: Component = () => {
             ? err.message
             : "unknown error",
         );
+        throw err;
       }
     }
 
@@ -451,37 +260,28 @@ const App: Component = () => {
     return pdfBytes;
   }
 
-  async function* generateFiles(
+  type Candidate = {
+    name: string;
+    data: Record<string, string>;
+  };
+
+  async function* enumerateCandidates(
     data: Record<string, string>[],
-    pdfBuf: ArrayBuffer,
-  ): AsyncGenerator<[string, Uint8Array]> {
-    for (const index in data) {
-      const d = data[index];
-      let name;
+  ): AsyncGenerator<Candidate> {
+    for (let i = 0; i < data.length; i++) {
+      const d = data[i];
+      let name: string;
+
       if (
         option.exportFileName &&
         option.exportFileName !== "default"
       ) {
         name = `${d[option.exportFileName]}.pdf`;
       } else {
-        name = `generated_${index + 1}.pdf`;
+        name = `${i + 1}.pdf`;
       }
-      console.log(`start generating file: "${name}"`);
-      try {
-        const pdfBytes = await generateFile(d, pdfBuf);
-        yield [name, pdfBytes];
-      } catch (err: any) {
-        console.error(
-          `An error occured when generating file: "${name}`,
-          (err as Error).message,
-        );
-        if (!option.skipError) {
-          console.warn(
-            "stop generating files due to an error occured.",
-          );
-          return;
-        }
-      }
+
+      yield { name, data: d };
     }
   }
 
@@ -504,12 +304,13 @@ const App: Component = () => {
         `file "${name}" saved to dir "${dirHandle.name}"`,
       );
     } catch (err) {
-      console.log(
-        `An error occured when generating file: "${name}"`,
+      console.error(
+        `An error occured when writing file: "${name}"`,
         err instanceof Error
           ? err.message
           : "unknown error",
       );
+      throw err;
     }
   }
 
@@ -518,56 +319,109 @@ const App: Component = () => {
     endIndex?: number,
   ) {
     setOpen(true);
+
     const buf = await appData.pdf?.arrayBuffer();
     const dirHandle = appData.workDir;
-    let json = appData.fillData;
-    if (!buf || !json || !dirHandle) return;
+    let data = appData.xlsxData?.data;
 
-    if (
-      startIndex !== undefined ||
-      endIndex !== undefined
-    ) {
-      json = json.slice(startIndex, endIndex);
-    }
-    console.info(`start generating ${json.length} files`);
+    if (!buf || !data || !dirHandle) return;
 
-    for await (const [name, bytes] of generateFiles(
-      json,
-      buf,
-    )) {
-      writeToNewFile(dirHandle, name, bytes);
-    }
-    console.info("generate task done");
-  }
+    if (!startIndex) startIndex = 0;
+    if (!endIndex) endIndex = data.length;
 
-  async function handleGenerateFirst() {
-    setOpen(true);
-    const buf = await appData.pdf?.arrayBuffer();
-    const handle = appData.workDir;
-    let json = appData.fillData;
-    if (!buf || !json || !handle) return;
-    const index = option.start ?? 0;
-    const data = json.at(index);
-    if (!data) {
-      console.warn(`json[${index}] data not found`, json);
+    if (startIndex < 0 || endIndex > data.length) {
+      console.error(
+        "startIndex or endIndex is out of range",
+      );
       return;
     }
-    console.info("start generating one file");
-    const pdfBytes = await generateFile(data, buf);
 
-    let name;
-    if (
-      option.exportFileName &&
-      option.exportFileName !== "default"
-    ) {
-      name = `${data[option.exportFileName]}.pdf`;
-    } else {
-      name = `generated_${index + 1}.pdf`;
+    data = data.slice(startIndex, endIndex);
+
+    console.info(`start generating ${data.length} files`);
+
+    // 并发上限可按需调整或提到配置里
+    const GEN_LIMIT = 4; // 生成 PDF 的并发
+    const WRITE_LIMIT = 4; // 写文件的并发
+
+    try {
+      await consume(
+        pipe<Candidate, [string, Uint8Array] | null>(
+          // ① 并发生成 PDF
+          mapConcurrent(
+            GEN_LIMIT,
+            async ({ name, data }) => {
+              try {
+                console.log(
+                  `start generating file: "${name}"`,
+                );
+                const pdfBytes = await generateFile(
+                  data,
+                  buf,
+                );
+                return [name, pdfBytes] as [
+                  string,
+                  Uint8Array,
+                ];
+              } catch (err: any) {
+                console.error(
+                  `An error occured when generating file: "${name}"`,
+                  err instanceof Error
+                    ? err.message
+                    : "unknown error",
+                );
+                if (!option.skipError) {
+                  // 不跳过 → 整条管线中止
+                  throw err;
+                }
+                console.warn(
+                  "skip this file due to error.",
+                );
+                // 跳过：下游通过 compact 过滤
+                return null;
+              }
+            },
+          ),
+          // ② 过滤掉生成失败（返回 null）的项
+          compact<[string, Uint8Array]>(),
+          // ③ 并发写文件
+          mapConcurrent(
+            WRITE_LIMIT,
+            async ([name, bytes]) => {
+              try {
+                await writeToNewFile(
+                  dirHandle,
+                  name,
+                  bytes,
+                );
+              } catch (err: any) {
+                console.error(
+                  `An error occured when writing file: "${name}"`,
+                  err instanceof Error
+                    ? err.message
+                    : "unknown error",
+                );
+                if (!option.skipError) {
+                  throw err;
+                }
+                console.warn(
+                  "skip writing this file due to error.",
+                );
+              }
+            },
+          ),
+        )(enumerateCandidates(data)),
+      );
+
+      console.info("PDF grenerate complete");
+    } catch (err) {
+      console.error(
+        `An error occured when generating files`,
+        err instanceof Error
+          ? err.message
+          : "unknown error",
+      );
     }
-
-    writeToNewFile(handle, name, pdfBytes);
-
-    console.info("generate task done");
   }
 
   const [open, setOpen] = createSignal(false);
@@ -596,44 +450,54 @@ const App: Component = () => {
     } as T;
   }
 
-  async function onXlsxUpload(file: File) {
-    const ab = await file.arrayBuffer();
-    const workbook = read(ab);
-    const sheetName = workbook.SheetNames[0];
-    const sheet = workbook.Sheets[sheetName];
+  const onXlsxUpload = loadingWrapper(
+    async (
+      e: Event & {
+        currentTarget: HTMLInputElement;
+        target: HTMLInputElement;
+      },
+    ) => {
+      const file = e.currentTarget.files?.item(0);
+      if (!file) return;
+      const ab = await file.arrayBuffer();
+      const workbook = read(ab);
+      const sheetName = workbook.SheetNames[0];
+      const sheet = workbook.Sheets[sheetName];
 
-    const json = utils.sheet_to_json(sheet, {
-      raw: false,
-      defval: "",
-      blankrows: false,
-    });
-    console.log(
-      "first row of data:",
-      JSON.stringify(json[0], null, 2),
-    );
-    setAppData(
-      "fillData",
-      json as Record<string, string>[],
-    );
+      const json = utils.sheet_to_json(sheet, {
+        raw: false,
+        defval: "",
+        blankrows: false,
+      });
+      console.debug(
+        "first row of data:",
+        JSON.stringify(json[0], null, 2),
+      );
 
-    const headers = [];
-    const columnCount =
-      utils.decode_range(sheet["!ref"]!).e.c + 1;
-    for (let i = 0; i < columnCount; ++i) {
-      headers[i] = sheet[`${utils.encode_col(i)}1`].v;
-    }
-    console.log(
-      "xlsx headers:",
-      JSON.stringify(headers, null, 2),
-    );
+      const headers = [];
+      const columnCount =
+        utils.decode_range(sheet["!ref"]!).e.c + 1;
+      for (let i = 0; i < columnCount; ++i) {
+        headers[i] = sheet[`${utils.encode_col(i)}1`].v;
+      }
 
-    setAppData("headers", headers);
-  }
+      console.debug(
+        "xlsx headers:",
+        JSON.stringify(headers, null, 2),
+      );
+
+      setAppData("xlsxData", {
+        file: file,
+        headers: headers,
+        data: json as Record<string, string>[],
+      });
+    },
+  );
 
   const availableExportNames = createMemo(() => {
     return [
       { name: "默认（索引）", value: "default" },
-      ...(appData.headers?.map((h) => ({
+      ...(appData.xlsxData?.headers?.map((h) => ({
         name: h,
         value: h,
       })) ?? []),
@@ -656,72 +520,53 @@ const App: Component = () => {
                   上传Excel文件
                 </p>
                 <Input
+                  id="xlsx-upload"
                   type="file"
                   accept=".xlsx"
                   disabled={info.loading}
-                  onChange={loadingWrapper(async (e) => {
-                    const file =
-                      e.currentTarget.files?.item(0);
-                    if (!file) return;
-                    await onXlsxUpload(file);
-                  })}
+                  onChange={onXlsxUpload}
                 />
               </label>
-              <Show when={appData.fillData}>
-                {(handle) => (
+              <Show when={appData.xlsxData}>
+                {(_) => (
                   <div
                     class="flex items-start gap-2 rounded-md border p-1 text-sm
                       font-medium shadow-sm"
                   >
-                    <div class="flex w-full flex-1 flex-col">
-                      <p>{`Length: ${handle().length}`}</p>
-                      <Collapsible as="label">
-                        <div class="flex items-center justify-between gap-4">
-                          <p>
-                            Headers{" "}
-                            {appData.headers?.length}
-                          </p>
-                          <CollapsibleTrigger
-                            as={(
-                              props: CollapsibleTriggerProps,
-                            ) => (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                class="w-9 p-0"
-                                onClick={props.onClick}
-                              >
-                                <ChevronsUpDown />
-                                <span class="sr-only">
-                                  Toggle
-                                </span>
-                              </Button>
-                            )}
-                          />
-                        </div>
-                        <CollapsibleContent class="space-y-2">
-                          <ul class="list font-mono text-sm">
-                            <For each={appData.headers}>
-                              {(header) => (
-                                <li>{header}</li>
-                              )}
-                            </For>
-                          </ul>
-                        </CollapsibleContent>
-                      </Collapsible>
+                    <div class="flex w-full flex-1 flex-col gap-1">
+                      <div class="flex flex-wrap gap-2">
+                        <p>
+                          {`总列数: ${appData.xlsxData?.headers?.length}`}
+                        </p>
+                        <p>{`总行数: ${appData.xlsxData?.data?.length}`}</p>
+                      </div>
+                      <div class="flex gap-1 flex-wrap">
+                        <For
+                          each={appData.xlsxData?.headers}
+                        >
+                          {(header) => (
+                            <Badge>{header}</Badge>
+                          )}
+                        </For>
+                      </div>
+                      <Button
+                        class="self-end"
+                        variant="destructive"
+                        size="icon"
+                        onClick={() => {
+                          const input =
+                            document.getElementById(
+                              "xlsx-upload",
+                            ) as HTMLInputElement;
+                          if (input) {
+                            input.value = "";
+                          }
+                          setAppData("xlsxData", null);
+                        }}
+                      >
+                        <Trash2 />
+                      </Button>
                     </div>
-                    <Button
-                      variant="destructive"
-                      size="icon"
-                      onClick={() => {
-                        batch(() => {
-                          setAppData("fillData", null);
-                          setAppData("headers", null);
-                        });
-                      }}
-                    >
-                      <Trash2 />
-                    </Button>
                   </div>
                 )}
               </Show>
@@ -732,8 +577,8 @@ const App: Component = () => {
                   上传PDF模板
                 </p>
                 <Input
+                  id="pdf-upload"
                   type="file"
-                  id="pdf-template"
                   accept=".pdf"
                   disabled={info.loading}
                   onChange={loadingWrapper(async (e) => {
@@ -760,18 +605,25 @@ const App: Component = () => {
                 />
               </label>
               <Show when={appData.pdf}>
-                {(handle) => (
+                {(file) => (
                   <div
                     class="flex items-center rounded-md border p-1 text-sm font-medium
                       shadow-sm"
                   >
-                    <span class="flex-1">{`PDF file: "${handle().name}"`}</span>
+                    <span class="flex-1">{`PDF file: "${file().name}"`}</span>
                     <Button
                       variant="destructive"
                       size="icon"
-                      onClick={() =>
-                        setAppData("pdf", null)
-                      }
+                      onClick={() => {
+                        const input =
+                          document.getElementById(
+                            "pdf-upload",
+                          ) as HTMLInputElement;
+                        if (input) {
+                          input.value = "";
+                        }
+                        setAppData("pdf", null);
+                      }}
                     >
                       <Trash2 />
                     </Button>
@@ -950,7 +802,7 @@ const App: Component = () => {
                 <Button
                   disabled={!info.generateEnable}
                   onClick={loadingWrapper(() =>
-                    handleGenerateFirst(),
+                    handleGenerate(0, 1),
                   )}
                 >
                   生成一份
@@ -1060,7 +912,7 @@ const App: Component = () => {
               minValue={
                 option.start ? option.start + 1 : undefined
               }
-              maxValue={appData.fillData?.length}
+              maxValue={appData.xlsxData?.data.length}
               onChange={(value) =>
                 setOption(
                   "end",
@@ -1081,7 +933,7 @@ const App: Component = () => {
                   onClick={() =>
                     setOption(
                       "end",
-                      appData.fillData?.length,
+                      appData.xlsxData?.data.length,
                     )
                   }
                 >
@@ -1136,6 +988,12 @@ const App: Component = () => {
                 optionTextValue="name"
                 placeholder="选择列作为文件名"
                 defaultValue={availableExportNames()[0]}
+                value={
+                  availableExportNames().find(
+                    (n) =>
+                      n.value === option.exportFileName,
+                  ) ?? availableExportNames()[0]
+                }
                 onChange={(v) => {
                   setOption(
                     "exportFileName",
@@ -1153,7 +1011,9 @@ const App: Component = () => {
               >
                 <SelectTrigger class="w-full max-w-xs">
                   <SelectValue<FieldItem>>
-                    {(state) => state.selectedOption().name}
+                    {(state) =>
+                      state.selectedOption()?.name
+                    }
                   </SelectValue>
                 </SelectTrigger>
                 <SelectContent
