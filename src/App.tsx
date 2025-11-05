@@ -464,32 +464,48 @@ const App: Component = () => {
       const sheetName = workbook.SheetNames[0];
       const sheet = workbook.Sheets[sheetName];
 
-      const json = utils.sheet_to_json(sheet, {
+      // 1) 解析整体范围并安全兜底
+      const range = utils.decode_range(
+        sheet["!ref"] ?? "A1",
+      );
+      // 2) 取第1行表头，空表头用列名 A/B/C… 代替
+      const headers: string[] = [];
+      for (let c = range.s.c; c <= range.e.c; c++) {
+        const addr = utils.encode_cell({ r: range.s.r, c });
+        const cell = sheet[addr];
+        const text = cell
+          ? (utils.format_cell(cell) ?? cell.v ?? "")
+          : "";
+        headers.push(text || utils.encode_col(c)); // 空则用列名
+      }
+
+      // 3) 从第2行开始读数据，并用上面生成的 headers 作为键名
+      const data = utils.sheet_to_json<
+        Record<string, string>
+      >(sheet, {
+        header: headers, // 自定义键名
+        range: {
+          s: { r: range.s.r + 1, c: range.s.c }, // 从第2行开始
+          e: { r: range.e.r, c: range.e.c },
+        },
         raw: false,
         defval: "",
         blankrows: false,
       });
-      console.debug(
-        "first row of data:",
-        JSON.stringify(json[0], null, 2),
-      );
-
-      const headers = [];
-      const columnCount =
-        utils.decode_range(sheet["!ref"]!).e.c + 1;
-      for (let i = 0; i < columnCount; ++i) {
-        headers[i] = sheet[`${utils.encode_col(i)}1`].v;
-      }
 
       console.debug(
         "xlsx headers:",
         JSON.stringify(headers, null, 2),
       );
+      console.debug(
+        "first row of data:",
+        JSON.stringify(data[0], null, 2),
+      );
 
       setAppData("xlsxData", {
-        file: file,
-        headers: headers,
-        data: json as Record<string, string>[],
+        file,
+        headers,
+        data,
       });
     },
   );
