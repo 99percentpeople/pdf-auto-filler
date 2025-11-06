@@ -882,6 +882,7 @@ const App: Component = () => {
               </Show>
             </div>
             <DualRangeSlider
+              minStepsBetweenThumbs={1}
               disabled={!info.rangeEnable}
               minValue={0}
               maxValue={appData.xlsxData?.data.length ?? 0}
@@ -896,14 +897,8 @@ const App: Component = () => {
                 appData.xlsxData?.data.length ?? 0,
               ]}
               onValueChange={(value) => {
-                setOption(
-                  "start",
-                  optional(value[0]) ?? undefined,
-                );
-                setOption(
-                  "end",
-                  optional(value[1]) ?? undefined,
-                );
+                setOption("start", value[0] ?? undefined);
+                setOption("end", value[1] ?? undefined);
               }}
               ariaLabel="索引范围"
             />
