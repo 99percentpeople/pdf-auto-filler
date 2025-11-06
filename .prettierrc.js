@@ -8,7 +8,8 @@ const config = {
   tabWidth: 2,
   printWidth: 60,
   tailwindFunctions: ["cn"],
-  tailwindConfig: "tailwind.config.js",
+  tailwindStylesheet: "./src/index.css",
+  plugins: ["prettier-plugin-tailwindcss"],
 };
 
 export default config;

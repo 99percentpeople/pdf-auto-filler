@@ -41,7 +41,7 @@ import {
   SelectValue,
 } from "./components/ui/select";
 import { get, set } from "idb-keyval";
-import { Input } from "./components/extends/input";
+import { Input } from "./components/ui/input";
 import {
   Logger,
   LoggerProvider,
@@ -82,12 +82,14 @@ import {
   mapConcurrent,
   pipe,
 } from "./utils/iter-tools";
+import DualRangeSlider from "./components/extends/range-slider";
+import { ButtonGroup } from "./components/ui/button-group";
 
 const App: Component = () => {
   const [appData, setAppData] = createStore<AppData>({
     font: null,
-    pdf: null,
     xlsxData: null,
+    pdfData: null,
     workDir: null,
     imgDir: null,
   });
@@ -177,15 +179,14 @@ const App: Component = () => {
       !info.loading &&
         !!handle &&
         !!appData.xlsxData?.data &&
-        !!appData.pdf,
+        !!appData.pdfData,
     );
   });
 
   async function generateFile(
     data: Record<string, string>,
-    pdfBuf: ArrayBuffer,
+    pdfDoc: PDFDocument,
   ) {
-    const pdfDoc = await PDFDocument.load(pdfBuf);
     const font = customFontFile();
     const form = pdfDoc.getForm();
     let customFont: PDFFont | null = null;
@@ -320,11 +321,11 @@ const App: Component = () => {
   ) {
     setOpen(true);
 
-    const buf = await appData.pdf?.arrayBuffer();
+    const doc = appData.pdfData?.doc;
     const dirHandle = appData.workDir;
     let data = appData.xlsxData?.data;
 
-    if (!buf || !data || !dirHandle) return;
+    if (!doc || !data || !dirHandle) return;
 
     if (!startIndex) startIndex = 0;
     if (!endIndex) endIndex = data.length;
@@ -357,7 +358,7 @@ const App: Component = () => {
                 );
                 const pdfBytes = await generateFile(
                   data,
-                  buf,
+                  doc,
                 );
                 return [name, pdfBytes] as [
                   string,
@@ -528,7 +529,7 @@ const App: Component = () => {
           minSize={0.2}
           class="relative overflow-y-auto"
         >
-          <div class="absolute inset-2 flex flex-col gap-2">
+          <div class="absolute inset-2 flex flex-col gap-4">
             <h3 class="h3">数据</h3>
             <div class="grid gap-1.5">
               <label class="grid w-full max-w-xs gap-1.5">
@@ -545,23 +546,22 @@ const App: Component = () => {
               </label>
               <Show when={appData.xlsxData}>
                 {(_) => (
-                  <div
-                    class="flex items-start gap-2 rounded-md border p-1 text-sm
-                      font-medium shadow-sm"
-                  >
-                    <div class="flex w-full flex-1 flex-col gap-1">
+                  <div class="flex items-start gap-2 rounded-md border p-1 text-sm font-medium shadow-sm">
+                    <div class="flex w-full flex-col gap-1">
                       <div class="flex flex-wrap gap-2">
                         <p>
                           {`总列数: ${appData.xlsxData?.headers?.length}`}
                         </p>
                         <p>{`总行数: ${appData.xlsxData?.data?.length}`}</p>
                       </div>
-                      <div class="flex gap-1 flex-wrap">
+                      <div class="flex flex-wrap gap-1">
                         <For
                           each={appData.xlsxData?.headers}
                         >
                           {(header) => (
-                            <Badge>{header}</Badge>
+                            <Badge variant="secondary">
+                              {header}
+                            </Badge>
                           )}
                         </For>
                       </div>
@@ -602,34 +602,43 @@ const App: Component = () => {
                       e.currentTarget.files?.item(0);
                     if (!file) return;
 
-                    setAppData("pdf", file);
-
                     const pdfDoc = await PDFDocument.load(
                       await file.arrayBuffer(),
                     );
-                    console.log(
-                      "pdf fields",
-                      pdfDoc
-                        .getForm()
-                        .getFields()
-                        .map(
-                          (f) =>
-                            `Type: ${getFieldTypeName(f)} Name: ${f.getName()}`,
-                        ),
-                    );
+
+                    setAppData("pdfData", {
+                      file,
+                      doc: pdfDoc,
+                    });
                   })}
                 />
               </label>
-              <Show when={appData.pdf}>
-                {(file) => (
-                  <div
-                    class="flex items-center rounded-md border p-1 text-sm font-medium
-                      shadow-sm"
-                  >
-                    <span class="flex-1">{`PDF file: "${file().name}"`}</span>
+              <Show when={appData.pdfData}>
+                {(pdfData) => (
+                  <div class="flex flex-col gap-1 rounded-md border p-1 text-sm font-medium shadow-sm">
+                    <div class="flex flex-1 gap-2">
+                      <span>{`PDF 模板: "${pdfData().file.name}"`}</span>
+                      <span>{`总页数: ${pdfData().doc.getPageCount()}`}</span>
+                    </div>
+                    <div class="flex flex-wrap gap-1">
+                      <For
+                        each={pdfData()
+                          .doc.getForm()
+                          .getFields()
+                          .map((f) => f.getName())}
+                      >
+                        {(label) => (
+                          <Badge variant="secondary">
+                            {label}
+                          </Badge>
+                        )}
+                      </For>
+                    </div>
+
                     <Button
                       variant="destructive"
                       size="icon"
+                      class="self-end"
                       onClick={() => {
                         const input =
                           document.getElementById(
@@ -638,7 +647,7 @@ const App: Component = () => {
                         if (input) {
                           input.value = "";
                         }
-                        setAppData("pdf", null);
+                        setAppData("pdfData", null);
                       }}
                     >
                       <Trash2 />
@@ -648,10 +657,7 @@ const App: Component = () => {
               </Show>
             </div>
             <div class="flex w-full max-w-xs flex-col gap-1.5">
-              <p
-                class="data-disabled:cursor-not-allowed data-disabled:opacity-70
-                  text-sm font-medium"
-              >
+              <p class="text-sm font-medium data-disabled:cursor-not-allowed data-disabled:opacity-70">
                 工作目录
               </p>
               <Button
@@ -708,10 +714,7 @@ const App: Component = () => {
               </Button>
               <Show when={appData.workDir}>
                 {(handle) => (
-                  <div
-                    class="flex items-center rounded-md border p-1 text-sm font-medium
-                      shadow-sm"
-                  >
+                  <div class="flex items-center rounded-md border p-1 text-sm font-medium shadow-sm">
                     <span class="w-full flex-1">{`Current work directory: "${handle().name}"`}</span>
                     <Button
                       variant="destructive"
@@ -728,10 +731,7 @@ const App: Component = () => {
             </div>
 
             <div class="flex w-full max-w-xs flex-col gap-1.5">
-              <p
-                class="data-disabled:cursor-not-allowed data-disabled:opacity-70
-                  text-sm font-medium"
-              >
+              <p class="text-sm font-medium data-disabled:cursor-not-allowed data-disabled:opacity-70">
                 图片目录
               </p>
               <Button
@@ -788,10 +788,7 @@ const App: Component = () => {
               </Button>
               <Show when={appData.imgDir}>
                 {(handle) => (
-                  <div
-                    class="flex items-center rounded-md border p-1 text-sm font-medium
-                      shadow-sm"
-                  >
+                  <div class="flex items-center rounded-md border p-1 text-sm font-medium shadow-sm">
                     <span class="w-full flex-1">{`Current image directory: "${handle().name}"`}</span>
                     <Button
                       variant="destructive"
@@ -808,10 +805,7 @@ const App: Component = () => {
             </div>
 
             <div class="w-full max-w-xs">
-              <p
-                class="data-disabled:cursor-not-allowed data-disabled:opacity-70
-                  text-sm font-medium"
-              >
+              <p class="text-sm font-medium data-disabled:cursor-not-allowed data-disabled:opacity-70">
                 开始生成
               </p>
               <div class="flex gap-1.5">
@@ -844,7 +838,7 @@ const App: Component = () => {
           minSize={0.2}
           class="relative overflow-y-auto"
         >
-          <div class="absolute inset-2 flex flex-col gap-2">
+          <div class="absolute inset-2 flex flex-col gap-4">
             <h3 class="h3">生成设置</h3>
 
             <div class="flex flex-col items-start gap-1.5">
@@ -870,10 +864,7 @@ const App: Component = () => {
 
               <Show when={customFontFile()}>
                 {(font) => (
-                  <div
-                    class="flex items-center gap-1.5 rounded-md border border-input p-1
-                      shadow-sm"
-                  >
+                  <div class="flex items-center gap-1.5 rounded-md border border-input p-1 shadow-sm">
                     <p class="text-sm">{`使用自定义字体: "${font().name}"`}</p>
                     <Button
                       disabled={info.loading}
@@ -890,73 +881,53 @@ const App: Component = () => {
                 )}
               </Show>
             </div>
-
-            <NumberField
-              class="w-full max-w-xs"
-              value={option.start}
+            <DualRangeSlider
+              disabled={!info.rangeEnable}
               minValue={0}
-              maxValue={
-                option.end ? option.end - 1 : undefined
-              }
-              onChange={(value) =>
+              maxValue={appData.xlsxData?.data.length ?? 0}
+              value={[
+                option.start ?? 0,
+                option.end ??
+                  appData.xlsxData?.data.length ??
+                  0,
+              ]}
+              initialValue={[
+                0,
+                appData.xlsxData?.data.length ?? 0,
+              ]}
+              onValueChange={(value) => {
                 setOption(
                   "start",
-                  optional(parseInt(value)) ?? undefined,
-                )
-              }
-              disabled={!info.rangeEnable}
-            >
-              <NumberFieldLabel>开始索引</NumberFieldLabel>
-              <div class="flex w-full gap-1">
-                <NumberFieldGroup class="flex-1">
-                  <NumberFieldDecrementTrigger aria-label="Decrement" />
-                  <NumberFieldInput />
-                  <NumberFieldIncrementTrigger aria-label="Increment" />
-                </NumberFieldGroup>
-                <Button
-                  disabled={!info.rangeEnable}
-                  onClick={() => setOption("start", 0)}
-                >
-                  置0
-                </Button>
-              </div>
-            </NumberField>
-
-            <NumberField
-              class="w-full max-w-xs"
-              value={option.end}
-              minValue={
-                option.start ? option.start + 1 : undefined
-              }
-              maxValue={appData.xlsxData?.data.length}
-              onChange={(value) =>
+                  optional(value[0]) ?? undefined,
+                );
                 setOption(
                   "end",
-                  optional(parseInt(value)) ?? undefined,
-                )
-              }
-              disabled={!info.rangeEnable}
-            >
-              <NumberFieldLabel>结束索引</NumberFieldLabel>
-              <div class="flex w-full gap-1">
-                <NumberFieldGroup class="flex-1">
-                  <NumberFieldDecrementTrigger aria-label="Decrement" />
-                  <NumberFieldInput />
-                  <NumberFieldIncrementTrigger aria-label="Increment" />
-                </NumberFieldGroup>
-                <Button
-                  disabled={!info.rangeEnable}
-                  onClick={() =>
-                    setOption(
-                      "end",
-                      appData.xlsxData?.data.length,
-                    )
-                  }
-                >
-                  最后一项
-                </Button>
-              </div>
-            </NumberField>
+                  optional(value[1]) ?? undefined,
+                );
+              }}
+              ariaLabel="索引范围"
+            />
+            <ButtonGroup>
+              <Button
+                variant="outline"
+                disabled={!info.rangeEnable}
+                onClick={() => setOption("start", 0)}
+              >
+                首项
+              </Button>
+              <Button
+                variant="outline"
+                disabled={!info.rangeEnable}
+                onClick={() =>
+                  setOption(
+                    "end",
+                    appData.xlsxData?.data.length,
+                  )
+                }
+              >
+                尾项
+              </Button>
+            </ButtonGroup>
             <Switch
               disabled={info.loading}
               class="flex items-center gap-2"
@@ -968,10 +939,7 @@ const App: Component = () => {
               <SwitchControl>
                 <SwitchThumb />
               </SwitchControl>
-              <SwitchLabel
-                class="data-disabled:cursor-not-allowed data-disabled:opacity-70
-                  text-sm font-medium leading-none"
-              >
+              <SwitchLabel class="text-sm leading-none font-medium data-disabled:cursor-not-allowed data-disabled:opacity-70">
                 跳过错误
               </SwitchLabel>
             </Switch>
@@ -986,10 +954,7 @@ const App: Component = () => {
               <SwitchControl>
                 <SwitchThumb />
               </SwitchControl>
-              <SwitchLabel
-                class="data-disabled:cursor-not-allowed data-disabled:opacity-70
-                  text-sm font-medium leading-none"
-              >
+              <SwitchLabel class="text-sm leading-none font-medium data-disabled:cursor-not-allowed data-disabled:opacity-70">
                 扁平化表单（生成后不可编辑）
               </SwitchLabel>
             </Switch>
@@ -1102,8 +1067,7 @@ function LoggerDrawer(props: {
         <div class="relative w-full flex-1">
           <Logger
             data-corvu-no-drag
-            class="absolute inset-0 select-text overflow-y-auto
-              whitespace-pre-wrap font-mono text-xs"
+            class="absolute inset-0 overflow-y-auto font-mono text-xs whitespace-pre-wrap select-text"
           />
         </div>
       </DrawerContent>
