@@ -1,0 +1,78 @@
+name: Build Nightly (on push to main)
+
+on:
+  push:
+    branches: ["main"]
+
+permissions:
+  contents: write
+
+jobs:
+  build-nightly:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+          run_install: false
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "pnpm"
+
+      - name: Install deps
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm build
+
+      - name: Name artifact (commit short SHA)
+        id: prep
+        run: |
+          SHORT_SHA=$(echo "${GITHUB_SHA}" | cut -c1-7)
+          NAME="pdf-auto-filler-nightly-${SHORT_SHA}.html"
+          cp dist/index.html "${NAME}"
+          echo "asset=${NAME}" >> $GITHUB_OUTPUT
+
+      - name: Delete nightly release and tag
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const tag = 'nightly';
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            // Delete existing release for the tag, if any
+            try {
+              const res = await github.rest.repos.getReleaseByTag({ owner, repo, tag });
+              const release = res.data;
+              core.info(`Deleting release "${release.name}" (id: ${release.id}) for tag "${tag}".`);
+              await github.rest.repos.deleteRelease({ owner, repo, release_id: release.id });
+            } catch (err) {
+              core.info(`No existing release for tag "${tag}", skip deleting release.`);
+            }
+            // Delete the tag ref itself, if it exists
+            try {
+              core.info(`Deleting tag ref "refs/tags/${tag}".`);
+              await github.rest.git.deleteRef({ owner, repo, ref: `tags/${tag}` });
+            } catch (err) {
+              core.info(`No tag ref "refs/tags/${tag}" found, skip deleting.`);
+            }
+
+      - name: Create/Update nightly release (tag=nightly)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: nightly
+          name: Nightly
+          body: "Auto-built from ${{ github.ref_name }}@${{ github.sha }}"
+          prerelease: true
+          make_latest: false
+          files: ${{ steps.prep.outputs.asset }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

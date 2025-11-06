@@ -1,0 +1,3 @@
+.disabled-next:has(+ *[data-disabled], + *:disabled) {
+  @apply cursor-not-allowed opacity-70;
+}

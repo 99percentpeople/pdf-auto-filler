@@ -1,0 +1,39 @@
+@reference "../../index.css";
+
+.logger {
+  & .odd {
+    &[data-level="info"] {
+      @apply bg-cyan-500/10;
+    }
+
+    &[data-level="warn"] {
+      @apply bg-orange-500/10;
+    }
+
+    &[data-level="error"] {
+      @apply bg-red-500/10;
+    }
+
+    &[data-level="log"] {
+      @apply bg-green-500/10;
+    }
+  }
+
+  & .even {
+    &[data-level="info"] {
+      @apply bg-cyan-500/20;
+    }
+
+    &[data-level="warn"] {
+      @apply bg-orange-500/20;
+    }
+
+    &[data-level="error"] {
+      @apply bg-red-500/20;
+    }
+
+    &[data-level="log"] {
+      @apply bg-green-500/20;
+    }
+  }
+}
