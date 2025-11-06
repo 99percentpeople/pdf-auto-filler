@@ -616,7 +616,7 @@ const App: Component = () => {
               <Show when={appData.pdfData}>
                 {(pdfData) => (
                   <div class="flex flex-col gap-1 rounded-md border p-1 text-sm font-medium shadow-sm">
-                    <div class="flex flex-1 gap-2">
+                    <div class="flex flex-1 flex-wrap gap-2">
                       <span>{`PDF 模板: "${pdfData().file.name}"`}</span>
                       <span>{`总页数: ${pdfData().doc.getPageCount()}`}</span>
                     </div>
