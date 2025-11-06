@@ -41,31 +41,28 @@ jobs:
           cp dist/index.html "${NAME}"
           echo "asset=${NAME}" >> $GITHUB_OUTPUT
 
-      - name: Delete old assets from nightly release
+      - name: Delete nightly release and tag
         uses: actions/github-script@v7
         with:
           script: |
             const tag = 'nightly';
-            let release;
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            // Delete existing release for the tag, if any
             try {
-              const res = await github.rest.repos.getReleaseByTag({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                tag
-              });
-              release = res.data;
+              const res = await github.rest.repos.getReleaseByTag({ owner, repo, tag });
+              const release = res.data;
+              core.info(`Deleting release "${release.name}" (id: ${release.id}) for tag "${tag}".`);
+              await github.rest.repos.deleteRelease({ owner, repo, release_id: release.id });
             } catch (err) {
-              core.info(`No existing release for tag "${tag}", skip deleting assets.`);
+              core.info(`No existing release for tag "${tag}", skip deleting release.`);
             }
-            if (release && Array.isArray(release.assets)) {
-              for (const asset of release.assets) {
-                core.info(`Deleting asset: ${asset.name} (${asset.id})`);
-                await github.rest.repos.deleteReleaseAsset({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  asset_id: asset.id
-                });
-              }
+            // Delete the tag ref itself, if it exists
+            try {
+              core.info(`Deleting tag ref "refs/tags/${tag}".`);
+              await github.rest.git.deleteRef({ owner, repo, ref: `tags/${tag}` });
+            } catch (err) {
+              core.info(`No tag ref "refs/tags/${tag}" found, skip deleting.`);
             }
 
       - name: Create/Update nightly release (tag=nightly)
