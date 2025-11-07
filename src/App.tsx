@@ -185,9 +185,10 @@ const App: Component = () => {
 
   async function generateFile(
     data: Record<string, string>,
-    pdfDoc: PDFDocument,
+    pdfBuf: ArrayBuffer,
   ) {
     const font = customFontFile();
+    const pdfDoc = await PDFDocument.load(pdfBuf);
     const form = pdfDoc.getForm();
     let customFont: PDFFont | null = null;
 
@@ -319,13 +320,17 @@ const App: Component = () => {
     startIndex?: number,
     endIndex?: number,
   ) {
+    // 并发上限可按需调整或提到配置里
+    const GEN_LIMIT = 4; // 生成 PDF 的并发
+    const WRITE_LIMIT = 4; // 写文件的并发
+
     setOpen(true);
 
-    const doc = appData.pdfData?.doc;
+    const pdfFile = appData.pdfData?.file;
     const dirHandle = appData.workDir;
     let data = appData.xlsxData?.data;
 
-    if (!doc || !data || !dirHandle) return;
+    if (!pdfFile || !data || !dirHandle) return;
 
     if (!startIndex) startIndex = 0;
     if (!endIndex) endIndex = data.length;
@@ -341,9 +346,7 @@ const App: Component = () => {
 
     console.info(`start generating ${data.length} files`);
 
-    // 并发上限可按需调整或提到配置里
-    const GEN_LIMIT = 4; // 生成 PDF 的并发
-    const WRITE_LIMIT = 4; // 写文件的并发
+    const pdfBuf = await pdfFile.arrayBuffer();
 
     try {
       await consume(
@@ -358,7 +361,7 @@ const App: Component = () => {
                 );
                 const pdfBytes = await generateFile(
                   data,
-                  doc,
+                  pdfBuf,
                 );
                 return [name, pdfBytes] as [
                   string,
