@@ -26,14 +26,6 @@ import {
   ResizablePanel,
 } from "./components/ui/resizable";
 import {
-  NumberField,
-  NumberFieldDecrementTrigger,
-  NumberFieldGroup,
-  NumberFieldIncrementTrigger,
-  NumberFieldInput,
-  NumberFieldLabel,
-} from "@/components/ui/number-field";
-import {
   Select,
   SelectContent,
   SelectItem,
@@ -184,8 +176,8 @@ const App: Component = () => {
   });
 
   async function generateFile(
-    data: Record<string, string>,
     pdfBuf: ArrayBuffer,
+    data: Record<string, string>,
   ) {
     const font = customFontFile();
     const pdfDoc = await PDFDocument.load(pdfBuf);
@@ -262,14 +254,9 @@ const App: Component = () => {
     return pdfBytes;
   }
 
-  type Candidate = {
-    name: string;
-    data: Record<string, string>;
-  };
-
   async function* enumerateCandidates(
     data: Record<string, string>[],
-  ): AsyncGenerator<Candidate> {
+  ): AsyncGenerator<[string, Record<string, string>]> {
     for (let i = 0; i < data.length; i++) {
       const d = data[i];
       let name: string;
@@ -283,7 +270,7 @@ const App: Component = () => {
         name = `${i + 1}.pdf`;
       }
 
-      yield { name, data: d };
+      yield [name, d];
     }
   }
 
@@ -348,72 +335,68 @@ const App: Component = () => {
 
     const pdfBuf = await pdfFile.arrayBuffer();
 
+    const generateDocument = mapConcurrent(
+      GEN_LIMIT,
+      async ([name, data]: [
+        string,
+        Record<string, string>,
+      ]) => {
+        try {
+          console.log(`start generating file: "${name}"`);
+          const pdfBytes = await generateFile(pdfBuf, data);
+          return [name, pdfBytes] as [string, Uint8Array];
+        } catch (err: any) {
+          console.error(
+            `An error occured when generating file: "${name}"`,
+            err instanceof Error
+              ? err.message
+              : "unknown error",
+          );
+          if (!option.skipError) {
+            // 不跳过 → 整条管线中止
+            throw err;
+          }
+          console.warn("skip this file due to error.");
+          // 跳过：下游通过 compact 过滤
+          return null;
+        }
+      },
+    );
+
+    const writeFile = mapConcurrent(
+      WRITE_LIMIT,
+      async ([name, bytes]: [string, Uint8Array]) => {
+        try {
+          await writeToNewFile(dirHandle, name, bytes);
+        } catch (err: any) {
+          console.error(
+            `An error occured when writing file: "${name}"`,
+            err instanceof Error
+              ? err.message
+              : "unknown error",
+          );
+          if (!option.skipError) {
+            throw err;
+          }
+          console.warn(
+            "skip writing this file due to error.",
+          );
+        }
+      },
+    );
+
     try {
       await consume(
-        pipe<Candidate, [string, Uint8Array] | null>(
-          // ① 并发生成 PDF
-          mapConcurrent(
-            GEN_LIMIT,
-            async ({ name, data }) => {
-              try {
-                console.log(
-                  `start generating file: "${name}"`,
-                );
-                const pdfBytes = await generateFile(
-                  data,
-                  pdfBuf,
-                );
-                return [name, pdfBytes] as [
-                  string,
-                  Uint8Array,
-                ];
-              } catch (err: any) {
-                console.error(
-                  `An error occured when generating file: "${name}"`,
-                  err instanceof Error
-                    ? err.message
-                    : "unknown error",
-                );
-                if (!option.skipError) {
-                  // 不跳过 → 整条管线中止
-                  throw err;
-                }
-                console.warn(
-                  "skip this file due to error.",
-                );
-                // 跳过：下游通过 compact 过滤
-                return null;
-              }
-            },
-          ),
-          // ② 过滤掉生成失败（返回 null）的项
+        pipe<
+          [string, Record<string, string>],
+          [string, Uint8Array] | null
+        >(
+          // 并发生成 PDF
+          generateDocument,
+          // 过滤掉生成失败（返回 null）的项
           compact<[string, Uint8Array]>(),
-          // ③ 并发写文件
-          mapConcurrent(
-            WRITE_LIMIT,
-            async ([name, bytes]) => {
-              try {
-                await writeToNewFile(
-                  dirHandle,
-                  name,
-                  bytes,
-                );
-              } catch (err: any) {
-                console.error(
-                  `An error occured when writing file: "${name}"`,
-                  err instanceof Error
-                    ? err.message
-                    : "unknown error",
-                );
-                if (!option.skipError) {
-                  throw err;
-                }
-                console.warn(
-                  "skip writing this file due to error.",
-                );
-              }
-            },
-          ),
+          // 并发写文件
+          writeFile,
         )(enumerateCandidates(data)),
       );
 
