@@ -5,6 +5,7 @@ import {
   createSignal,
   For,
   onMount,
+  onCleanup,
   Show,
   type Component,
 } from "solid-js";
@@ -77,6 +78,26 @@ import {
 import DualRangeSlider from "./components/extends/range-slider";
 import { ButtonGroup } from "./components/ui/button-group";
 
+// 生成过程统计信息类型（供日志摘要展示）
+interface GenStats {
+  total: number;
+  generatedOk: number;
+  generatedErr: number;
+  writtenOk: number;
+  writtenErr: number;
+  skippedGen: number;
+  skippedWrite: number;
+  startAt: number;
+  endAt?: number;
+}
+
+function formatDuration(ms: number) {
+  const s = Math.floor(ms / 1000);
+  const mm = String(Math.floor(s / 60)).padStart(2, "0");
+  const ss = String(s % 60).padStart(2, "0");
+  return `${mm}:${ss}`;
+}
+
 const App: Component = () => {
   const [appData, setAppData] = createStore<AppData>({
     font: null,
@@ -106,6 +127,34 @@ const App: Component = () => {
       name: "options",
     },
   );
+
+  // 生成过程统计信息（用于优化日志显示）
+  const [genStats, setGenStats] = createStore<GenStats>({
+    total: 0,
+    generatedOk: 0,
+    generatedErr: 0,
+    writtenOk: 0,
+    writtenErr: 0,
+    skippedGen: 0,
+    skippedWrite: 0,
+    startAt: 0,
+    endAt: undefined,
+  });
+  function resetGenStats(total: number) {
+    setGenStats(
+      reconcile({
+        total,
+        generatedOk: 0,
+        generatedErr: 0,
+        writtenOk: 0,
+        writtenErr: 0,
+        skippedGen: 0,
+        skippedWrite: 0,
+        startAt: Date.now(),
+        endAt: undefined,
+      } satisfies GenStats),
+    );
+  }
 
   onMount(async () => {
     const workDirHandle =
@@ -331,7 +380,10 @@ const App: Component = () => {
 
     data = data.slice(startIndex, endIndex);
 
-    console.info(`start generating ${data.length} files`);
+    resetGenStats(data.length);
+    console.info(
+      `[生成] 开始生成，共 ${data.length} 个文件；配置：生成并发=${GEN_LIMIT}，写入并发=${WRITE_LIMIT}，错误跳过=${!!option.skipError}，扁平化=${!!option.flattern}`,
+    );
 
     const pdfBuf = await pdfFile.arrayBuffer();
 
@@ -342,21 +394,36 @@ const App: Component = () => {
         Record<string, string>,
       ]) => {
         try {
-          console.log(`start generating file: "${name}"`);
+          console.info(`[生成] 文档生成开始: "${name}"`);
           const pdfBytes = await generateFile(pdfBuf, data);
+          setGenStats(
+            "generatedOk",
+            genStats.generatedOk + 1,
+          );
           return [name, pdfBytes] as [string, Uint8Array];
         } catch (err: any) {
+          setGenStats(
+            "generatedErr",
+            genStats.generatedErr + 1,
+          );
           console.error(
-            `An error occured when generating file: "${name}"`,
-            err instanceof Error
-              ? err.message
-              : "unknown error",
+            `[生成] 文档生成失败: "${name}" -> ${
+              err instanceof Error
+                ? err.message
+                : "unknown error"
+            }`,
           );
           if (!option.skipError) {
             // 不跳过 → 整条管线中止
             throw err;
           }
-          console.warn("skip this file due to error.");
+          setGenStats(
+            "skippedGen",
+            genStats.skippedGen + 1,
+          );
+          console.warn(
+            `[生成] 跳过该文件（生成失败）: "${name}"`,
+          );
           // 跳过：下游通过 compact 过滤
           return null;
         }
@@ -368,18 +435,28 @@ const App: Component = () => {
       async ([name, bytes]: [string, Uint8Array]) => {
         try {
           await writeToNewFile(dirHandle, name, bytes);
+          setGenStats("writtenOk", genStats.writtenOk + 1);
         } catch (err: any) {
+          setGenStats(
+            "writtenErr",
+            genStats.writtenErr + 1,
+          );
           console.error(
-            `An error occured when writing file: "${name}"`,
-            err instanceof Error
-              ? err.message
-              : "unknown error",
+            `[生成] 写入失败: "${name}" -> ${
+              err instanceof Error
+                ? err.message
+                : "unknown error"
+            }`,
           );
           if (!option.skipError) {
             throw err;
           }
+          setGenStats(
+            "skippedWrite",
+            genStats.skippedWrite + 1,
+          );
           console.warn(
-            "skip writing this file due to error.",
+            `[生成] 跳过写入（错误被忽略）: "${name}"`,
           );
         }
       },
@@ -400,10 +477,18 @@ const App: Component = () => {
         )(enumerateCandidates(data)),
       );
 
-      console.info("PDF grenerate complete");
+      const endedAt = Date.now();
+      setGenStats("endAt", endedAt);
+      const elapsed = formatDuration(
+        endedAt - genStats.startAt,
+      );
+      console.info(
+        `[生成] 完成 | 总计 ${genStats.total} | 生成 成功:${genStats.generatedOk} 失败:${genStats.generatedErr} 跳过:${genStats.skippedGen} | 写入 成功:${genStats.writtenOk} 失败:${genStats.writtenErr} 跳过:${genStats.skippedWrite} | 用时 ${elapsed}`,
+      );
     } catch (err) {
+      setGenStats("endAt", Date.now());
       console.error(
-        `An error occured when generating files`,
+        `[生成] 批量生成过程中断`,
         err instanceof Error
           ? err.message
           : "unknown error",
@@ -723,7 +808,7 @@ const App: Component = () => {
               <Button
                 draggable="true"
                 disabled={info.loading}
-                onClick={loadingWrapper(async (ev) => {
+                onClick={loadingWrapper(async () => {
                   try {
                     const handle =
                       await window.showDirectoryPicker({
@@ -994,6 +1079,7 @@ const App: Component = () => {
               logging={info.loading}
               open={open()}
               setOpen={setOpen}
+              stats={genStats}
             />
             <Show when={info.loading}>
               <h1 class="h3">Loading</h1>
@@ -1020,8 +1106,42 @@ function LoggerDrawer(props: {
   logging: boolean;
   open: boolean;
   setOpen: (open: boolean) => void;
+  stats: GenStats;
 }) {
   const { clear } = useLogger();
+  const [now, setNow] = createSignal<number>(Date.now());
+  let timer: number | undefined;
+
+  createEffect(() => {
+    const running =
+      props.logging &&
+      !props.stats.endAt &&
+      !!props.stats.startAt;
+    if (running && timer === undefined) {
+      timer = window.setInterval(
+        () => setNow(Date.now()),
+        1000,
+      );
+    } else if (!running && timer !== undefined) {
+      clearInterval(timer);
+      timer = undefined;
+    }
+  });
+
+  onCleanup(() => {
+    if (timer !== undefined) {
+      clearInterval(timer);
+      timer = undefined;
+    }
+  });
+
+  const elapsedText = () =>
+    formatDuration(
+      Math.max(
+        (props.stats.endAt ?? now()) - props.stats.startAt,
+        0,
+      ),
+    );
   return (
     <Drawer open={props.open} onOpenChange={props.setOpen}>
       <DrawerTrigger
@@ -1042,6 +1162,47 @@ function LoggerDrawer(props: {
             >
               <Trash2 />
             </Button>
+          </div>
+          <div class="flex justify-between gap-2 text-xs">
+            <div class="flex flex-wrap gap-1">
+              <Badge variant="secondary">
+                总计: {props.stats.total}
+              </Badge>
+              <Badge variant="secondary">
+                生成成功: {props.stats.generatedOk}
+              </Badge>
+              <Badge variant="secondary">
+                生成失败: {props.stats.generatedErr}
+              </Badge>
+              <Badge variant="secondary">
+                写入成功: {props.stats.writtenOk}
+              </Badge>
+              <Badge variant="secondary">
+                写入失败: {props.stats.writtenErr}
+              </Badge>
+              <Badge variant="secondary">
+                跳过:{" "}
+                {props.stats.skippedGen +
+                  props.stats.skippedWrite}
+              </Badge>
+            </div>
+            <div class="flex items-center justify-end gap-2">
+              {props.logging || props.stats.endAt ? (
+                <span class="muted">
+                  用时: {elapsedText()}
+                </span>
+              ) : (
+                <></>
+              )}
+              <span class="muted">
+                状态:{" "}
+                {props.logging
+                  ? "运行中"
+                  : props.stats.endAt
+                    ? "已完成"
+                    : "待开始"}
+              </span>
+            </div>
           </div>
         </DrawerHeader>
         <Separator />

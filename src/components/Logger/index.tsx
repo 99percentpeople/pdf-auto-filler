@@ -3,7 +3,6 @@ import {
   Component,
   ComponentProps,
   createContext,
-  createEffect,
   createMemo,
   createSignal,
   For,
@@ -28,7 +27,7 @@ export interface LoggerContext {
   clear: () => void;
 }
 export type Level = "log" | "info" | "warn" | "error";
-const levels: Level[] = ["log", "info", "warn", "error"];
+const levels = ["log", "info", "warn", "error"] as const;
 export interface LogItem {
   message: string;
   level: Level;
@@ -40,11 +39,6 @@ const LoggerContext = createContext<LoggerContext>();
 export const LoggerProvider: Component<
   LoggerProviderProps
 > = (props) => {
-  const [local, rest] = splitProps(props, [
-    "children",
-    "prefix",
-    "timestamp",
-  ]);
 
   const [logItems, setLogItems] = createSignal<LogItem[]>(
     [],
@@ -59,8 +53,18 @@ export const LoggerProvider: Component<
       };
     });
   }
+
+  function distroy() {
+    levels.forEach((method) => {
+      console[method] = originalConsole[method];
+    });
+  }
+
   onMount(() => {
     hookConsole();
+  });
+  onCleanup(() => {
+    distroy();
   });
 
   function logToDOM(level: Level, messages: any[]): void {
@@ -79,12 +83,12 @@ export const LoggerProvider: Component<
         }
       })
       .join(" ");
-    if (local.timestamp) {
+    if (props.timestamp) {
       const timestamp = new Date().toLocaleString();
       formattedMessage = `[${timestamp}] ${formattedMessage}`;
     }
-    if (local.prefix) {
-      formattedMessage = `${local.prefix} ${formattedMessage}`;
+    if (props.prefix) {
+      formattedMessage = `${props.prefix} ${formattedMessage}`;
     }
     setLogItems((state) => [
       ...state,
@@ -95,27 +99,14 @@ export const LoggerProvider: Component<
     ]);
   }
 
-  function distroy() {
-    levels.forEach((method) => {
-      console[method] = originalConsole[method];
-    });
-  }
-  onCleanup(() => {
-    distroy();
-  });
-
-  const clear = () => {
-    setLogItems([]);
-  };
-
   return (
     <LoggerContext.Provider
       value={{
         items: logItems,
-        clear,
+        clear: () => setLogItems([]),
       }}
     >
-      {local.children}
+      {props.children}
     </LoggerContext.Provider>
   );
 };
@@ -155,7 +146,6 @@ export const Logger: Component<LoggerProps> = (
   });
 
   const items = virtualizer.getVirtualItems();
-
 
   onCleanup(() => {
     observer?.disconnect();
