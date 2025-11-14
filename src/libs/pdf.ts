@@ -5,7 +5,6 @@ import {
   drawText,
   PDFButton,
   PDFCheckBox,
-  PDFContentStream,
   PDFDropdown,
   PDFField,
   PDFFont,
@@ -19,8 +18,6 @@ import {
   popGraphicsState,
   pushGraphicsState,
   rgb,
-  rotateDegrees,
-  translate,
 } from "@cantoo/pdf-lib";
 
 export function getFieldTypeName(
@@ -262,6 +259,8 @@ export function fillCheckBox(
     text === "true" ||
     text === "1" ||
     text === "yes" ||
+    text === "Y" ||
+    text === "y" ||
     text === "是"
   ) {
     field.check();

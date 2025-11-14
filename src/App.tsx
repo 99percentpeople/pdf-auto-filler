@@ -1,31 +1,15 @@
 import "./App.css";
 import {
   createEffect,
-  createMemo,
   createSignal,
   For,
-  onMount,
   onCleanup,
   Show,
   type Component,
 } from "solid-js";
-import { createStore, reconcile } from "solid-js/store";
-import {
-  PDFCheckBox,
-  PDFDocument,
-  PDFFont,
-  PDFSignature,
-  PDFTextField,
-} from "@cantoo/pdf-lib";
-import fontkit from "@pdf-lib/fontkit";
-import { read, utils } from "xlsx";
+import { reconcile } from "solid-js/store";
 import { optional } from "./utils/helper";
 import { Button } from "@/components/ui/button";
-import {
-  Resizable,
-  ResizableHandle,
-  ResizablePanel,
-} from "./components/ui/resizable";
 import {
   Select,
   SelectContent,
@@ -33,14 +17,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "./components/ui/select";
-import { get, set } from "idb-keyval";
 import { Input } from "./components/ui/input";
 import {
   Logger,
   LoggerProvider,
   useLogger,
 } from "./components/Logger";
-import { Trash2 } from "lucide-solid";
+import { LogsIcon, Trash2 } from "lucide-solid";
 import {
   Switch,
   SwitchControl,
@@ -53,43 +36,22 @@ import {
   DrawerHeader,
   DrawerTrigger,
 } from "./components/ui/drawer";
-import { makePersisted } from "@solid-primitives/storage";
-import {
-  AppData,
-  AppInfo,
-  AppOptions,
-  FieldItem,
-  verifyPermission,
-} from "./config";
+import { FieldItem } from "./config";
 import { Separator } from "./components/ui/separator";
-import {
-  fillCheckBox,
-  fillSignature,
-  fillTextField,
-  getFieldTypeName,
-} from "./utils/pdf";
 import { Badge } from "./components/ui/badge";
-import {
-  compact,
-  consume,
-  mapConcurrent,
-  pipe,
-} from "./utils/iter-tools";
 import DualRangeSlider from "./components/extends/range-slider";
 import { ButtonGroup } from "./components/ui/button-group";
-
-// 生成过程统计信息类型（供日志摘要展示）
-interface GenStats {
-  total: number;
-  generatedOk: number;
-  generatedErr: number;
-  writtenOk: number;
-  writtenErr: number;
-  skippedGen: number;
-  skippedWrite: number;
-  startAt: number;
-  endAt?: number;
-}
+import useAppViewModel, {
+  GenStats,
+} from "./hooks/useAppViewModel";
+import {
+  Tabs,
+  TabsList,
+  TabsTrigger,
+  TabsContent,
+  TabsIndicator,
+} from "./components/ui/tabs";
+import PreviewTabs from "./components/PreviewTabs";
 
 function formatDuration(ms: number) {
   const s = Math.floor(ms / 1000);
@@ -99,1005 +61,453 @@ function formatDuration(ms: number) {
 }
 
 const App: Component = () => {
-  const [appData, setAppData] = createStore<AppData>({
-    font: null,
-    xlsxData: null,
-    pdfData: null,
-    workDir: null,
-    imgDir: null,
-  });
-
-  const [customFontFile, setCustomFontFile] =
-    createSignal<File | null>(null);
-  const [info, setInfo] = createStore<AppInfo>({
-    loading: false,
-    uploadEnable: true,
-    rangeEnable: false,
-    selectColumnEnable: false,
-    generateEnable: false,
-  });
-  const [option, setOption] = makePersisted(
-    createStore<AppOptions>({
-      start: 0,
-      flattern: false,
-      exportFileName: "default",
-    }),
-    {
-      storage: sessionStorage,
-      name: "options",
-    },
-  );
-
-  // 生成过程统计信息（用于优化日志显示）
-  const [genStats, setGenStats] = createStore<GenStats>({
-    total: 0,
-    generatedOk: 0,
-    generatedErr: 0,
-    writtenOk: 0,
-    writtenErr: 0,
-    skippedGen: 0,
-    skippedWrite: 0,
-    startAt: 0,
-    endAt: undefined,
-  });
-  function resetGenStats(total: number) {
-    setGenStats(
-      reconcile({
-        total,
-        generatedOk: 0,
-        generatedErr: 0,
-        writtenOk: 0,
-        writtenErr: 0,
-        skippedGen: 0,
-        skippedWrite: 0,
-        startAt: Date.now(),
-        endAt: undefined,
-      } satisfies GenStats),
-    );
-  }
-
-  onMount(async () => {
-    const workDirHandle =
-      await get<FileSystemDirectoryHandle>("work_dir");
-    if (workDirHandle) {
-      try {
-        if (await verifyPermission(workDirHandle, true))
-          console.log(
-            `Work directory is loaded, current permission state is granted`,
-          );
-        else throw Error(`verifyPermission failed`);
-        setAppData("workDir", workDirHandle);
-      } catch (err) {
-        console.error((err as Error).message);
-      }
-    }
-
-    createEffect(async () => {
-      await set("work_dir", appData.workDir);
-    });
-
-    const imgDirHandle =
-      await get<FileSystemDirectoryHandle>("img_dir");
-    if (imgDirHandle) {
-      try {
-        if (await verifyPermission(imgDirHandle, false))
-          console.log(
-            `Image directory is loaded, current permission state is granted`,
-          );
-        else throw Error(`verifyPermission failed`);
-        setAppData("imgDir", imgDirHandle);
-      } catch (err) {
-        console.error((err as Error).message);
-      }
-    }
-
-    createEffect(async () => {
-      await set("img_dir", appData.imgDir);
-    });
-
-    const font = await get<File>("font");
-    if (font) {
-      setCustomFontFile(font);
-    }
-    createEffect(async () => {
-      const font = customFontFile();
-      await set("font", font);
-      if (font)
-        console.log(`use custom font file: ${font.name}`);
-    });
-  });
-
-  createEffect(() => {
-    const data = appData.xlsxData?.data;
-    setInfo("rangeEnable", !!data && !info.loading);
-    setInfo("selectColumnEnable", !!data && !info.loading);
-  });
-
-  createEffect(() => {
-    const handle = appData.workDir;
-    setInfo(
-      "generateEnable",
-      !info.loading &&
-        !!handle &&
-        !!appData.xlsxData?.data &&
-        !!appData.pdfData,
-    );
-  });
-
-  async function generateFile(
-    pdfBuf: ArrayBuffer,
-    data: Record<string, string>,
-  ) {
-    const font = customFontFile();
-    const pdfDoc = await PDFDocument.load(pdfBuf);
-    const form = pdfDoc.getForm();
-    let customFont: PDFFont | null = null;
-
-    pdfDoc.registerFontkit(fontkit);
-    if (font) {
-      const embedFont = await pdfDoc.embedFont(
-        await font.arrayBuffer(),
-        {
-          subset: true,
-        },
-      );
-      customFont = embedFont;
-      const rawUpdateFieldAppearances =
-        form.updateFieldAppearances.bind(form);
-      form.updateFieldAppearances = function () {
-        return rawUpdateFieldAppearances(embedFont);
-      };
-    }
-
-    for (const field of form.getFields()) {
-      const text = data[field.getName()];
-      if (!text) continue;
-      try {
-        switch (getFieldTypeName(field)) {
-          case "PDFTextField": {
-            fillTextField(field as PDFTextField, text);
-            break;
-          }
-          case "PDFSignature": {
-            await fillSignature(
-              field as PDFSignature,
-              text,
-              appData.imgDir,
-              customFont,
-            );
-            break;
-          }
-          case "PDFCheckBox": {
-            fillCheckBox(field as PDFCheckBox, text);
-            break;
-          }
-        }
-      } catch (err) {
-        console.error(
-          `Error filling field "${field.getName()}":`,
-          err instanceof Error
-            ? err.message
-            : "unknown error",
-        );
-        throw err;
-      }
-    }
-
-    if (option.flattern) {
-      try {
-        form.flatten();
-      } catch (err) {
-        console.error(
-          "Error flattening form:",
-          err instanceof Error
-            ? err.message
-            : "unknown error",
-        );
-        throw err;
-      }
-    }
-
-    const pdfBytes = await pdfDoc.save({
-      useObjectStreams: true,
-    });
-    return pdfBytes;
-  }
-
-  async function* enumerateCandidates(
-    data: Record<string, string>[],
-  ): AsyncGenerator<[string, Record<string, string>]> {
-    for (let i = 0; i < data.length; i++) {
-      const d = data[i];
-      let name: string;
-
-      if (
-        option.exportFileName &&
-        option.exportFileName !== "default"
-      ) {
-        name = `${d[option.exportFileName]}.pdf`;
-      } else {
-        name = `${i + 1}.pdf`;
-      }
-
-      yield [name, d];
-    }
-  }
-
-  async function writeToNewFile(
-    dirHandle: FileSystemDirectoryHandle,
-    name: string,
-    bytes: Uint8Array,
-  ) {
-    try {
-      const fileHandle = await dirHandle.getFileHandle(
-        name,
-        { create: true },
-      );
-      const writableStream =
-        await fileHandle.createWritable();
-      // @ts-ignore
-      await writableStream.write(bytes);
-      await writableStream.close();
-      console.log(
-        `file "${name}" saved to dir "${dirHandle.name}"`,
-      );
-    } catch (err) {
-      console.error(
-        `An error occured when writing file: "${name}"`,
-        err instanceof Error
-          ? err.message
-          : "unknown error",
-      );
-      throw err;
-    }
-  }
-
-  async function handleGenerate(
-    startIndex?: number,
-    endIndex?: number,
-  ) {
-    // 并发上限可按需调整或提到配置里
-    const GEN_LIMIT = 4; // 生成 PDF 的并发
-    const WRITE_LIMIT = 4; // 写文件的并发
-
-    setOpen(true);
-
-    const pdfFile = appData.pdfData?.file;
-    const dirHandle = appData.workDir;
-    let data = appData.xlsxData?.data;
-
-    if (!pdfFile || !data || !dirHandle) return;
-
-    if (!startIndex) startIndex = 0;
-    if (!endIndex) endIndex = data.length;
-
-    if (startIndex < 0 || endIndex > data.length) {
-      console.error(
-        "startIndex or endIndex is out of range",
-      );
-      return;
-    }
-
-    data = data.slice(startIndex, endIndex);
-
-    resetGenStats(data.length);
-    console.info(
-      `[生成] 开始生成，共 ${data.length} 个文件；配置：生成并发=${GEN_LIMIT}，写入并发=${WRITE_LIMIT}，错误跳过=${!!option.skipError}，扁平化=${!!option.flattern}`,
-    );
-
-    const pdfBuf = await pdfFile.arrayBuffer();
-
-    const generateDocument = mapConcurrent(
-      GEN_LIMIT,
-      async ([name, data]: [
-        string,
-        Record<string, string>,
-      ]) => {
-        try {
-          console.info(`[生成] 文档生成开始: "${name}"`);
-          const pdfBytes = await generateFile(pdfBuf, data);
-          setGenStats(
-            "generatedOk",
-            genStats.generatedOk + 1,
-          );
-          return [name, pdfBytes] as [string, Uint8Array];
-        } catch (err: any) {
-          setGenStats(
-            "generatedErr",
-            genStats.generatedErr + 1,
-          );
-          console.error(
-            `[生成] 文档生成失败: "${name}" -> ${
-              err instanceof Error
-                ? err.message
-                : "unknown error"
-            }`,
-          );
-          if (!option.skipError) {
-            // 不跳过 → 整条管线中止
-            throw err;
-          }
-          setGenStats(
-            "skippedGen",
-            genStats.skippedGen + 1,
-          );
-          console.warn(
-            `[生成] 跳过该文件（生成失败）: "${name}"`,
-          );
-          // 跳过：下游通过 compact 过滤
-          return null;
-        }
-      },
-    );
-
-    const writeFile = mapConcurrent(
-      WRITE_LIMIT,
-      async ([name, bytes]: [string, Uint8Array]) => {
-        try {
-          await writeToNewFile(dirHandle, name, bytes);
-          setGenStats("writtenOk", genStats.writtenOk + 1);
-        } catch (err: any) {
-          setGenStats(
-            "writtenErr",
-            genStats.writtenErr + 1,
-          );
-          console.error(
-            `[生成] 写入失败: "${name}" -> ${
-              err instanceof Error
-                ? err.message
-                : "unknown error"
-            }`,
-          );
-          if (!option.skipError) {
-            throw err;
-          }
-          setGenStats(
-            "skippedWrite",
-            genStats.skippedWrite + 1,
-          );
-          console.warn(
-            `[生成] 跳过写入（错误被忽略）: "${name}"`,
-          );
-        }
-      },
-    );
-
-    try {
-      await consume(
-        pipe<
-          [string, Record<string, string>],
-          [string, Uint8Array] | null
-        >(
-          // 并发生成 PDF
-          generateDocument,
-          // 过滤掉生成失败（返回 null）的项
-          compact<[string, Uint8Array]>(),
-          // 并发写文件
-          writeFile,
-        )(enumerateCandidates(data)),
-      );
-
-      const endedAt = Date.now();
-      setGenStats("endAt", endedAt);
-      const elapsed = formatDuration(
-        endedAt - genStats.startAt,
-      );
-      console.info(
-        `[生成] 完成 | 总计 ${genStats.total} | 生成 成功:${genStats.generatedOk} 失败:${genStats.generatedErr} 跳过:${genStats.skippedGen} | 写入 成功:${genStats.writtenOk} 失败:${genStats.writtenErr} 跳过:${genStats.skippedWrite} | 用时 ${elapsed}`,
-      );
-    } catch (err) {
-      setGenStats("endAt", Date.now());
-      console.error(
-        `[生成] 批量生成过程中断`,
-        err instanceof Error
-          ? err.message
-          : "unknown error",
-      );
-    }
-  }
-
-  const [open, setOpen] = createSignal(false);
-
-  function loadingWrapper<
-    T extends any | ((...args: any[]) => void),
-  >(fn: T): T {
-    return async function (
-      this: any,
-      ...args: any
-    ): Promise<T> {
-      setInfo("loading", true);
-
-      if (typeof fn !== "function")
-        throw Error(
-          `Error fn type: ${typeof fn}, typeof fn should be function`,
-        );
-      try {
-        const result = fn.apply(this, args);
-        return await Promise.resolve(result);
-      } catch (err) {
-        throw err;
-      } finally {
-        setInfo("loading", false);
-      }
-    } as T;
-  }
-
-  const onXlsxUpload = loadingWrapper(
-    async (
-      e: Event & {
-        currentTarget: HTMLInputElement;
-        target: HTMLInputElement;
-      },
-    ) => {
-      const file = e.currentTarget.files?.item(0);
-      if (!file) return;
-      const ab = await file.arrayBuffer();
-      const workbook = read(ab);
-      const sheetName = workbook.SheetNames[0];
-      const sheet = workbook.Sheets[sheetName];
-
-      // 1) 解析整体范围并安全兜底
-      const range = utils.decode_range(
-        sheet["!ref"] ?? "A1",
-      );
-      // 2) 取第1行表头，空表头用列名 A/B/C… 代替
-      const headers: string[] = [];
-      for (let c = range.s.c; c <= range.e.c; c++) {
-        const addr = utils.encode_cell({ r: range.s.r, c });
-        const cell = sheet[addr];
-        const text = cell
-          ? (utils.format_cell(cell) ?? cell.v ?? "")
-          : "";
-        headers.push(text || utils.encode_col(c)); // 空则用列名
-      }
-
-      // 3) 从第2行开始读数据，并用上面生成的 headers 作为键名
-      const data = utils.sheet_to_json<
-        Record<string, string>
-      >(sheet, {
-        header: headers, // 自定义键名
-        range: {
-          s: { r: range.s.r + 1, c: range.s.c }, // 从第2行开始
-          e: { r: range.e.r, c: range.e.c },
-        },
-        raw: false,
-        defval: "",
-        blankrows: false,
-      });
-
-      console.debug(
-        "xlsx headers:",
-        JSON.stringify(headers, null, 2),
-      );
-      console.debug(
-        "first row of data:",
-        JSON.stringify(data[0], null, 2),
-      );
-
-      setAppData("xlsxData", {
-        file,
-        headers,
-        data,
-      });
-    },
-  );
-
-  const availableExportNames = createMemo(() => {
-    return [
-      { name: "默认（索引）", value: "default" },
-      ...(appData.xlsxData?.headers?.map((h) => ({
-        name: h,
-        value: h,
-      })) ?? []),
-    ];
-  });
+  const vm = useAppViewModel();
 
   return (
     <LoggerProvider timestamp>
-      <Resizable class="h-full w-full rounded-lg border">
-        <ResizablePanel
-          initialSize={0.4}
-          minSize={0.2}
-          class="relative overflow-y-auto"
-        >
-          <div class="absolute inset-2 flex flex-col gap-4">
-            <h3 class="h3">数据</h3>
-            <div class="grid gap-1.5">
-              <label class="grid w-full max-w-xs gap-1.5">
-                <p class="disabled-next text-sm font-medium">
-                  上传Excel文件
-                </p>
-                <Input
-                  id="xlsx-upload"
-                  type="file"
-                  accept=".xlsx"
-                  disabled={info.loading}
-                  onChange={onXlsxUpload}
-                />
-              </label>
-              <Show when={appData.xlsxData}>
-                {(_) => (
-                  <div class="flex items-start gap-2 rounded-md border p-1 text-sm font-medium shadow-sm">
-                    <div class="flex w-full flex-col gap-1">
-                      <div class="flex flex-wrap gap-2">
-                        <p>
-                          {`总列数: ${appData.xlsxData?.headers?.length}`}
-                        </p>
-                        <p>{`总行数: ${appData.xlsxData?.data?.length}`}</p>
+      <div class="flex h-full">
+        <div class="flex-1">
+          <PreviewTabs
+            pdf={vm.appData.pdfData}
+            xlsx={vm.appData.xlsxData}
+          />
+        </div>
+        <Tabs class="flex max-w-md flex-col border-l p-2">
+          <TabsList>
+            <TabsTrigger value="data">数据</TabsTrigger>
+            <TabsTrigger value="gen-setting">
+              生成设置
+            </TabsTrigger>
+          </TabsList>
+          <TabsContent
+            value="data"
+            class="relative h-full flex-1 overflow-auto"
+          >
+            <div class="absolute inset-0 flex flex-col gap-4">
+              <div class="grid gap-1.5">
+                <label class="grid w-full max-w-xs gap-1.5">
+                  <p class="disabled-next text-sm font-medium">
+                    上传Excel文件
+                  </p>
+                  <Input
+                    id="xlsx-upload"
+                    type="file"
+                    accept=".xlsx"
+                    disabled={vm.info.loading}
+                    onChange={vm.onXlsxUpload}
+                  />
+                </label>
+                <Show when={vm.appData.xlsxData}>
+                  {(_) => (
+                    <div class="flex items-start gap-2 rounded-md border p-1 text-sm font-medium shadow-sm">
+                      <div class="flex w-full flex-col gap-1">
+                        <div class="flex flex-wrap gap-2">
+                          <p>
+                            {`总列数: ${vm.appData.xlsxData?.headers?.length}`}
+                          </p>
+                          <p>{`总行数: ${vm.appData.xlsxData?.data?.length}`}</p>
+                        </div>
+                        <div class="flex flex-wrap gap-1">
+                          <For
+                            each={
+                              vm.appData.xlsxData?.headers
+                            }
+                          >
+                            {(header) => (
+                              <Badge variant="secondary">
+                                {header}
+                              </Badge>
+                            )}
+                          </For>
+                        </div>
+                        <Button
+                          class="self-end"
+                          variant="destructive"
+                          size="icon"
+                          onClick={() => {
+                            const input =
+                              document.getElementById(
+                                "xlsx-upload",
+                              ) as HTMLInputElement;
+                            if (input) {
+                              input.value = "";
+                            }
+                            vm.setAppData("xlsxData", null);
+                          }}
+                        >
+                          <Trash2 />
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </Show>
+              </div>
+              <div class="grid w-full gap-1.5">
+                <label class="flex w-full max-w-xs flex-col gap-1.5">
+                  <p class="disabled-next text-sm font-medium">
+                    上传PDF模板
+                  </p>
+                  <Input
+                    id="pdf-upload"
+                    type="file"
+                    accept=".pdf"
+                    disabled={vm.info.loading}
+                    onChange={vm.onPdfUpload}
+                  />
+                </label>
+                <Show when={vm.appData.pdfData}>
+                  {(pdfData) => (
+                    <div class="flex flex-col gap-1 rounded-md border p-1 text-sm font-medium shadow-sm">
+                      <div class="flex flex-1 flex-wrap gap-2">
+                        <span>{`PDF 模板: "${pdfData().file.name}"`}</span>
+                        <span>{`总页数: ${pdfData().doc.getPageCount()}`}</span>
                       </div>
                       <div class="flex flex-wrap gap-1">
                         <For
-                          each={appData.xlsxData?.headers}
+                          each={pdfData()
+                            .doc.getForm()
+                            .getFields()
+                            .map((f) => f.getName())}
                         >
-                          {(header) => (
+                          {(label) => (
                             <Badge variant="secondary">
-                              {header}
+                              {label}
                             </Badge>
                           )}
                         </For>
                       </div>
+
                       <Button
-                        class="self-end"
                         variant="destructive"
                         size="icon"
+                        class="self-end"
                         onClick={() => {
                           const input =
                             document.getElementById(
-                              "xlsx-upload",
+                              "pdf-upload",
                             ) as HTMLInputElement;
                           if (input) {
                             input.value = "";
                           }
-                          setAppData("xlsxData", null);
+                          vm.setAppData("pdfData", null);
                         }}
                       >
                         <Trash2 />
                       </Button>
                     </div>
-                  </div>
-                )}
-              </Show>
-            </div>
-            <div class="grid w-full gap-1.5">
-              <label class="flex w-full max-w-xs flex-col gap-1.5">
-                <p class="disabled-next text-sm font-medium">
-                  上传PDF模板
+                  )}
+                </Show>
+              </div>
+              <div class="flex w-full max-w-xs flex-col gap-1.5">
+                <p class="text-sm font-medium data-disabled:cursor-not-allowed data-disabled:opacity-70">
+                  工作目录
                 </p>
-                <Input
-                  id="pdf-upload"
-                  type="file"
-                  accept=".pdf"
-                  disabled={info.loading}
-                  onChange={loadingWrapper(async (e) => {
-                    const file =
-                      e.currentTarget.files?.item(0);
-                    if (!file) return;
-
-                    const pdfDoc = await PDFDocument.load(
-                      await file.arrayBuffer(),
-                    );
-
-                    setAppData("pdfData", {
-                      file,
-                      doc: pdfDoc,
-                    });
-                  })}
-                />
-              </label>
-              <Show when={appData.pdfData}>
-                {(pdfData) => (
-                  <div class="flex flex-col gap-1 rounded-md border p-1 text-sm font-medium shadow-sm">
-                    <div class="flex flex-1 flex-wrap gap-2">
-                      <span>{`PDF 模板: "${pdfData().file.name}"`}</span>
-                      <span>{`总页数: ${pdfData().doc.getPageCount()}`}</span>
-                    </div>
-                    <div class="flex flex-wrap gap-1">
-                      <For
-                        each={pdfData()
-                          .doc.getForm()
-                          .getFields()
-                          .map((f) => f.getName())}
-                      >
-                        {(label) => (
-                          <Badge variant="secondary">
-                            {label}
-                          </Badge>
-                        )}
-                      </For>
-                    </div>
-
-                    <Button
-                      variant="destructive"
-                      size="icon"
-                      class="self-end"
-                      onClick={() => {
-                        const input =
-                          document.getElementById(
-                            "pdf-upload",
-                          ) as HTMLInputElement;
-                        if (input) {
-                          input.value = "";
+                <Button
+                  draggable="true"
+                  disabled={vm.info.loading}
+                  onClick={vm.onSelectWorkDir}
+                  onDragOver={(ev) => {
+                    ev.preventDefault();
+                  }}
+                  onDrop={vm.onDropWorkDir}
+                >
+                  {vm.appData.workDir
+                    ? `切换`
+                    : `打开选择器`}
+                </Button>
+                <Show when={vm.appData.workDir}>
+                  {(handle) => (
+                    <div class="flex items-center rounded-md border p-1 text-sm font-medium shadow-sm">
+                      <span class="w-full flex-1">{`Current work directory: "${handle().name}"`}</span>
+                      <Button
+                        variant="destructive"
+                        size="icon"
+                        onClick={() =>
+                          vm.setAppData("workDir", null)
                         }
-                        setAppData("pdfData", null);
-                      }}
-                    >
-                      <Trash2 />
-                    </Button>
-                  </div>
-                )}
-              </Show>
-            </div>
-            <div class="flex w-full max-w-xs flex-col gap-1.5">
-              <p class="text-sm font-medium data-disabled:cursor-not-allowed data-disabled:opacity-70">
-                工作目录
-              </p>
-              <Button
-                draggable="true"
-                disabled={info.loading}
-                onClick={loadingWrapper(async () => {
-                  try {
-                    const handle =
-                      await window.showDirectoryPicker({
-                        startIn: "documents",
-                        mode: "readwrite",
-                      });
-                    console.log(
-                      "select work directory: ",
-                      handle.name,
-                    );
-                    setAppData("workDir", handle);
-                  } catch (err) {
-                    console.warn((err as Error).message);
-                  }
-                })}
-                onDragOver={(ev) => {
-                  ev.preventDefault();
-                }}
-                onDrop={loadingWrapper(async (ev) => {
-                  ev.preventDefault();
-                  if (!ev.dataTransfer) return;
-                  for (const item of ev.dataTransfer
-                    .items) {
-                    if (item.kind !== "file") continue;
-                    const handle =
-                      await item.getAsFileSystemHandle();
-                    if (handle?.kind !== "directory")
-                      continue;
-                    const dirHandle =
-                      handle as FileSystemDirectoryHandle;
-                    if (
-                      await verifyPermission(
-                        dirHandle,
-                        true,
-                      )
-                    ) {
-                      console.log(
-                        "drop work directory: ",
-                        handle.name,
-                      );
-                      setAppData("workDir", dirHandle);
-                      break;
-                    }
-                  }
-                })}
-              >
-                {appData.workDir ? `切换` : `打开选择器`}
-              </Button>
-              <Show when={appData.workDir}>
-                {(handle) => (
-                  <div class="flex items-center rounded-md border p-1 text-sm font-medium shadow-sm">
-                    <span class="w-full flex-1">{`Current work directory: "${handle().name}"`}</span>
-                    <Button
-                      variant="destructive"
-                      size="icon"
-                      onClick={() =>
-                        setAppData("workDir", null)
-                      }
-                    >
-                      <Trash2 />
-                    </Button>
-                  </div>
-                )}
-              </Show>
-            </div>
-
-            <div class="flex w-full max-w-xs flex-col gap-1.5">
-              <p class="text-sm font-medium data-disabled:cursor-not-allowed data-disabled:opacity-70">
-                图片目录
-              </p>
-              <Button
-                draggable="true"
-                disabled={info.loading}
-                onClick={loadingWrapper(async () => {
-                  try {
-                    const handle =
-                      await window.showDirectoryPicker({
-                        startIn: "pictures",
-                        mode: "read",
-                      });
-                    console.log(
-                      "select img directory: ",
-                      handle.name,
-                    );
-                    setAppData("imgDir", handle);
-                  } catch (err) {
-                    console.warn((err as Error).message);
-                  }
-                })}
-                onDragOver={(ev) => {
-                  ev.preventDefault();
-                }}
-                onDrop={loadingWrapper(async (ev) => {
-                  ev.preventDefault();
-                  if (!ev.dataTransfer) return;
-                  for (const item of ev.dataTransfer
-                    .items) {
-                    if (item.kind !== "file") continue;
-                    const handle =
-                      await item.getAsFileSystemHandle();
-                    if (handle?.kind !== "directory")
-                      continue;
-                    const dirHandle =
-                      handle as FileSystemDirectoryHandle;
-                    if (
-                      await verifyPermission(
-                        dirHandle,
-                        false,
-                      )
-                    ) {
-                      console.log(
-                        "drop image directory: ",
-                        handle.name,
-                      );
-                      setAppData("imgDir", dirHandle);
-                      break;
-                    }
-                  }
-                })}
-              >
-                {appData.imgDir ? "切换" : "打开选择器"}
-              </Button>
-              <Show when={appData.imgDir}>
-                {(handle) => (
-                  <div class="flex items-center rounded-md border p-1 text-sm font-medium shadow-sm">
-                    <span class="w-full flex-1">{`Current image directory: "${handle().name}"`}</span>
-                    <Button
-                      variant="destructive"
-                      size="icon"
-                      onClick={() =>
-                        setAppData("imgDir", null)
-                      }
-                    >
-                      <Trash2 />
-                    </Button>
-                  </div>
-                )}
-              </Show>
-            </div>
-
-            <div class="w-full max-w-xs">
-              <p class="text-sm font-medium data-disabled:cursor-not-allowed data-disabled:opacity-70">
-                开始生成
-              </p>
-              <div class="flex gap-1.5">
-                <Button
-                  disabled={!info.generateEnable}
-                  onClick={loadingWrapper(() =>
-                    handleGenerate(0, 1),
+                      >
+                        <Trash2 />
+                      </Button>
+                    </div>
                   )}
-                >
-                  生成一份
-                </Button>
+                </Show>
+              </div>
+
+              <div class="flex w-full max-w-xs flex-col gap-1.5">
+                <p class="text-sm font-medium data-disabled:cursor-not-allowed data-disabled:opacity-70">
+                  图片目录
+                </p>
                 <Button
-                  disabled={!info.generateEnable}
-                  onClick={loadingWrapper(() =>
-                    handleGenerate(
-                      option?.start,
-                      option?.end,
-                    ),
-                  )}
+                  draggable="true"
+                  disabled={vm.info.loading}
+                  onClick={vm.onSelectImgDir}
+                  onDragOver={(ev) => {
+                    ev.preventDefault();
+                  }}
+                  onDrop={vm.onDropImgDir}
                 >
-                  批量生成
+                  {vm.appData.imgDir
+                    ? "切换"
+                    : "打开选择器"}
                 </Button>
+                <Show when={vm.appData.imgDir}>
+                  {(handle) => (
+                    <div class="flex items-center rounded-md border p-1 text-sm font-medium shadow-sm">
+                      <span class="w-full flex-1">{`Current image directory: "${handle().name}"`}</span>
+                      <Button
+                        variant="destructive"
+                        size="icon"
+                        onClick={() =>
+                          vm.setAppData("imgDir", null)
+                        }
+                      >
+                        <Trash2 />
+                      </Button>
+                    </div>
+                  )}
+                </Show>
+              </div>
+
+              <div class="sticky bottom-0 mt-auto flex justify-center bg-background p-2">
+                <ButtonGroup>
+                  <Button
+                    disabled={!vm.info.generateEnable}
+                    onClick={() =>
+                      vm.handleGenerate(
+                        vm.option.start,
+                        vm.option.end,
+                      )
+                    }
+                  >
+                    批量生成
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    disabled={!vm.info.generateEnable}
+                    onClick={() => vm.handleGenerate(0, 1)}
+                  >
+                    生成一份
+                  </Button>
+                </ButtonGroup>
               </div>
             </div>
-          </div>
-        </ResizablePanel>
-        <ResizableHandle withHandle />
-        <ResizablePanel
-          initialSize={0.6}
-          minSize={0.2}
-          class="relative overflow-y-auto"
-        >
-          <div class="absolute inset-2 flex flex-col gap-4">
-            <h3 class="h3">生成设置</h3>
+          </TabsContent>
+          <TabsContent
+            value="gen-setting"
+            class="relative flex-1 overflow-auto"
+          >
+            <div class="absolute inset-0 flex flex-col gap-4">
+              <div class="flex flex-col items-start gap-1.5">
+                <label class="grid w-full max-w-xs gap-1.5">
+                  <p class="disabled-next text-sm font-medium">
+                    自定义字体
+                  </p>
+                  <Input
+                    type="file"
+                    accept=".ttf,.otf,.woff,.woff2"
+                    disabled={vm.info.loading}
+                    onChange={(e) => {
+                      const file =
+                        e.currentTarget.files?.item(0);
+                      if (!file) {
+                        return;
+                      }
 
-            <div class="flex flex-col items-start gap-1.5">
-              <label class="grid w-full max-w-xs gap-1.5">
-                <p class="disabled-next text-sm font-medium">
-                  自定义字体
-                </p>
-                <Input
-                  type="file"
-                  accept=".ttf,.otf,.woff,.woff2"
-                  disabled={info.loading}
-                  onChange={loadingWrapper(async (e) => {
-                    const file =
-                      e.currentTarget.files?.item(0);
-                    if (!file) {
-                      return;
-                    }
+                      vm.setCustomFontFile(file);
+                    }}
+                  />
+                </label>
 
-                    setCustomFontFile(file);
-                  })}
-                />
-              </label>
-
-              <Show when={customFontFile()}>
-                {(font) => (
-                  <div class="flex items-center gap-1.5 rounded-md border border-input p-1 shadow-sm">
-                    <p class="text-sm">{`使用自定义字体: "${font().name}"`}</p>
-                    <Button
-                      disabled={info.loading}
-                      onClick={(e) => {
-                        e.preventDefault();
-                        setCustomFontFile(null);
-                      }}
-                      variant="destructive"
-                      size="icon"
-                    >
-                      <Trash2 />
-                    </Button>
-                  </div>
-                )}
-              </Show>
-            </div>
-            <DualRangeSlider
-              minStepsBetweenThumbs={1}
-              disabled={!info.rangeEnable}
-              minValue={0}
-              maxValue={appData.xlsxData?.data.length ?? 0}
-              value={[
-                option.start ?? 0,
-                option.end ??
-                  appData.xlsxData?.data.length ??
+                <Show when={vm.customFontFile()}>
+                  {(font) => (
+                    <div class="flex items-center gap-1.5 rounded-md border border-input p-1 shadow-sm">
+                      <p class="text-sm">{`使用自定义字体: "${font().name}"`}</p>
+                      <Button
+                        disabled={vm.info.loading}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          vm.setCustomFontFile(null);
+                        }}
+                        variant="destructive"
+                        size="icon"
+                      >
+                        <Trash2 />
+                      </Button>
+                    </div>
+                  )}
+                </Show>
+              </div>
+              <DualRangeSlider
+                minStepsBetweenThumbs={1}
+                disabled={!vm.info.rangeEnable}
+                minValue={0}
+                maxValue={
+                  vm.appData.xlsxData?.data.length ?? 0
+                }
+                value={[
+                  vm.option.start ?? 0,
+                  vm.option.end ??
+                    vm.appData.xlsxData?.data.length ??
+                    0,
+                ]}
+                initialValue={[
                   0,
-              ]}
-              initialValue={[
-                0,
-                appData.xlsxData?.data.length ?? 0,
-              ]}
-              onValueChange={(value) => {
-                setOption("start", value[0] ?? undefined);
-                setOption("end", value[1] ?? undefined);
-              }}
-              ariaLabel="索引范围"
-            />
-            <ButtonGroup>
-              <Button
-                variant="outline"
-                disabled={!info.rangeEnable}
-                onClick={() => setOption("start", 0)}
-              >
-                首项
-              </Button>
-              <Button
-                variant="outline"
-                disabled={!info.rangeEnable}
-                onClick={() =>
-                  setOption(
+                  vm.appData.xlsxData?.data.length ?? 0,
+                ]}
+                onValueChange={(value) => {
+                  vm.setOption(
+                    "start",
+                    value[0] ?? undefined,
+                  );
+                  vm.setOption(
                     "end",
-                    appData.xlsxData?.data.length,
-                  )
-                }
-              >
-                尾项
-              </Button>
-            </ButtonGroup>
-            <Switch
-              disabled={info.loading}
-              class="flex items-center gap-2"
-              checked={option.skipError}
-              onChange={(isChecked) =>
-                setOption("skipError", isChecked)
-              }
-            >
-              <SwitchControl>
-                <SwitchThumb />
-              </SwitchControl>
-              <SwitchLabel class="text-sm leading-none font-medium data-disabled:cursor-not-allowed data-disabled:opacity-70">
-                跳过错误
-              </SwitchLabel>
-            </Switch>
-            <Switch
-              disabled={info.loading}
-              class="flex items-center gap-2"
-              checked={option.flattern}
-              onChange={(isChecked) =>
-                setOption("flattern", isChecked)
-              }
-            >
-              <SwitchControl>
-                <SwitchThumb />
-              </SwitchControl>
-              <SwitchLabel class="text-sm leading-none font-medium data-disabled:cursor-not-allowed data-disabled:opacity-70">
-                扁平化表单（生成后不可编辑）
-              </SwitchLabel>
-            </Switch>
-            <label class="grid w-full max-w-xs gap-1.5">
-              <p class="disabled-next text-sm font-medium">
-                导出文件名称
-              </p>
-              <Select
-                fitViewport
-                disabled={!info.selectColumnEnable}
-                optionValue="value"
-                optionTextValue="name"
-                placeholder="选择列作为文件名"
-                defaultValue={availableExportNames()[0]}
-                value={
-                  availableExportNames().find(
-                    (n) =>
-                      n.value === option.exportFileName,
-                  ) ?? availableExportNames()[0]
-                }
-                onChange={(v) => {
-                  setOption(
-                    "exportFileName",
-                    reconcile(
-                      optional(v.value) ?? undefined,
-                    ),
+                    value[1] ?? undefined,
                   );
                 }}
-                options={availableExportNames()}
-                itemComponent={(props) => (
-                  <SelectItem item={props.item}>
-                    {props.item.rawValue.name}
-                  </SelectItem>
-                )}
+                ariaLabel="索引范围"
+              />
+              <ButtonGroup>
+                <Button
+                  variant="outline"
+                  disabled={!vm.info.rangeEnable}
+                  onClick={() => vm.setOption("start", 0)}
+                >
+                  首项
+                </Button>
+                <Button
+                  variant="outline"
+                  disabled={!vm.info.rangeEnable}
+                  onClick={() =>
+                    vm.setOption(
+                      "end",
+                      vm.appData.xlsxData?.data.length,
+                    )
+                  }
+                >
+                  尾项
+                </Button>
+              </ButtonGroup>
+              <Switch
+                disabled={vm.info.loading}
+                class="flex items-center gap-2"
+                checked={vm.option.skipError}
+                onChange={(isChecked) =>
+                  vm.setOption("skipError", isChecked)
+                }
               >
-                <SelectTrigger class="w-full max-w-xs">
-                  <SelectValue<FieldItem>>
-                    {(state) =>
-                      state.selectedOption()?.name
-                    }
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent
-                  class="overflow-y-auto"
-                  style={{
-                    "max-height":
-                      "var(--kb-popper-content-available-height)",
-                    "max-width":
-                      "var(--kb-popper-content-available-width)",
+                <SwitchControl>
+                  <SwitchThumb />
+                </SwitchControl>
+                <SwitchLabel class="text-sm leading-none font-medium data-disabled:cursor-not-allowed data-disabled:opacity-70">
+                  跳过错误
+                </SwitchLabel>
+              </Switch>
+              <Switch
+                disabled={vm.info.loading}
+                class="flex items-center gap-2"
+                checked={vm.option.flattern}
+                onChange={(isChecked) =>
+                  vm.setOption("flattern", isChecked)
+                }
+              >
+                <SwitchControl>
+                  <SwitchThumb />
+                </SwitchControl>
+                <SwitchLabel class="text-sm leading-none font-medium data-disabled:cursor-not-allowed data-disabled:opacity-70">
+                  扁平化表单（生成后不可编辑）
+                </SwitchLabel>
+              </Switch>
+              <label class="grid w-full max-w-xs gap-1.5">
+                <p class="disabled-next text-sm font-medium">
+                  导出文件名称
+                </p>
+                <Select
+                  fitViewport
+                  disabled={!vm.info.selectColumnEnable}
+                  optionValue="value"
+                  optionTextValue="name"
+                  placeholder="选择列作为文件名"
+                  defaultValue={
+                    vm.availableExportNames()[0]
+                  }
+                  value={
+                    vm
+                      .availableExportNames()
+                      .find(
+                        (n) =>
+                          n.value ===
+                          vm.option.exportFileName,
+                      ) ?? vm.availableExportNames()[0]
+                  }
+                  onChange={(v) => {
+                    vm.setOption(
+                      "exportFileName",
+                      reconcile(
+                        optional(v.value) ?? undefined,
+                      ),
+                    );
                   }}
-                />
-              </Select>
-            </label>
+                  options={vm.availableExportNames()}
+                  itemComponent={(props) => (
+                    <SelectItem item={props.item}>
+                      {props.item.rawValue.name}
+                    </SelectItem>
+                  )}
+                >
+                  <SelectTrigger class="w-full max-w-xs">
+                    <SelectValue<FieldItem>>
+                      {(state) =>
+                        state.selectedOption()?.name
+                      }
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent
+                    class="overflow-y-auto"
+                    style={{
+                      "max-height":
+                        "var(--kb-popper-content-available-height)",
+                      "max-width":
+                        "var(--kb-popper-content-available-width)",
+                    }}
+                  />
+                </Select>
+              </label>
 
-            <LoggerDrawer
-              logging={info.loading}
-              open={open()}
-              setOpen={setOpen}
-              stats={genStats}
-            />
-            <Show when={info.loading}>
-              <h1 class="h3">Loading</h1>
-            </Show>
-            <div class="mt-auto">
-              <Show when={BUILD_DATE}>
-                {(bd) => (
-                  <p class="muted">{`Build Date: ${bd()}`}</p>
-                )}
+              <Button
+                variant="outline"
+                disabled={vm.open()}
+                onClick={() => vm.setOpen(true)}
+                class="w-full max-w-xs"
+              >
+                <LogsIcon class="size-4" />
+                日志
+              </Button>
+
+              <Show when={vm.info.loading}>
+                <h1 class="h3">Loading</h1>
               </Show>
-              <p class="small muted">
-                This app only available in Chrome or Edge
-                after version 86, Opera after version 72.
-              </p>
+
+              <div class="flex flex-col gap-2">
+                <Show when={BUILD_DATE}>
+                  {(bd) => (
+                    <p class="muted">{`Build Date: ${bd()}`}</p>
+                  )}
+                </Show>
+                <p class="small muted">
+                  This app only available in Chrome or Edge
+                  after version 86, Opera after version 72.
+                </p>
+              </div>
             </div>
-          </div>
-        </ResizablePanel>
-      </Resizable>
+          </TabsContent>
+        </Tabs>
+      </div>
+      <LoggerDrawer
+        logging={vm.info.loading}
+        open={vm.open()}
+        setOpen={vm.setOpen}
+        stats={vm.genStats}
+      />
     </LoggerProvider>
   );
 };
@@ -1144,13 +554,6 @@ function LoggerDrawer(props: {
     );
   return (
     <Drawer open={props.open} onOpenChange={props.setOpen}>
-      <DrawerTrigger
-        as={Button}
-        variant="outline"
-        class="max-w-xs"
-      >
-        日志
-      </DrawerTrigger>
       <DrawerContent class="container mx-auto flex h-2/3 flex-col">
         <DrawerHeader>
           <div class="flex w-full items-center justify-between">

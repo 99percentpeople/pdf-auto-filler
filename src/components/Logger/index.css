@@ -1,4 +1,4 @@
-@reference "../../index.css";
+@reference "../../globals.css";
 
 .logger {
   & .odd {
