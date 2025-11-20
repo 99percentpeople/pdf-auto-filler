@@ -1,0 +1,6 @@
+@import "pdfjs-dist/web/pdf_viewer.css";
+
+#viewerContainer * {
+ box-sizing: content-box;
+}
+

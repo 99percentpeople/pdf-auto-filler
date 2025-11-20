@@ -34,12 +34,11 @@ export interface LogItem {
 }
 
 const originalConsole: { [method: string]: any } = {};
-
 const LoggerContext = createContext<LoggerContext>();
+
 export const LoggerProvider: Component<
   LoggerProviderProps
 > = (props) => {
-
   const [logItems, setLogItems] = createSignal<LogItem[]>(
     [],
   );

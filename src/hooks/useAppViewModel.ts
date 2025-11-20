@@ -34,6 +34,7 @@ import {
   mapConcurrent,
   pipe,
 } from "@/utils/iter-tools";
+import { toast } from "solid-sonner";
 
 interface GenStats {
   total: number;
@@ -62,6 +63,9 @@ export default function useAppViewModel() {
     workDir: null,
     imgDir: null,
   });
+  const [error, setError] = createSignal<string | null>(
+    null,
+  );
   const [customFontFile, setCustomFontFile] =
     createSignal<File | null>(null);
   const [info, setInfo] = createStore<AppInfo>({
@@ -118,6 +122,14 @@ export default function useAppViewModel() {
     }
     createEffect(async () => {
       await set("work_dir", appData.workDir);
+    });
+
+    createEffect(() => {
+      const errMsg = error();
+      if (errMsg) {
+        toast.error(errMsg);
+        setError(null);
+      }
     });
 
     const imgDirHandle =
@@ -249,7 +261,7 @@ export default function useAppViewModel() {
     await writableStream.close();
   }
 
-  const [open, setOpen] = createSignal(false);
+  const [openLogger, setOpenLogger] = createSignal(false);
 
   function loadingWrapper<
     T extends any | ((...args: any[]) => void),
@@ -268,49 +280,6 @@ export default function useAppViewModel() {
     } as T;
   }
 
-  const onXlsxUpload = loadingWrapper(
-    async (
-      e: Event & {
-        currentTarget: HTMLInputElement;
-        target: HTMLInputElement;
-      },
-    ) => {
-      const file = e.currentTarget.files?.item(0);
-      if (!file) return;
-      const ab = await file.arrayBuffer();
-      const workbook = read(ab);
-      const sheetName = workbook.SheetNames[0];
-      const sheet = workbook.Sheets[sheetName];
-      const range = utils.decode_range(
-        sheet["!ref"] ?? "A1",
-      );
-      const headers: string[] = [];
-      for (let c = range.s.c; c <= range.e.c; c++) {
-        const addr = utils.encode_cell({ r: range.s.r, c });
-        const cell = sheet[addr];
-        const text = cell
-          ? (utils.format_cell(cell) ??
-            (cell as any).v ??
-            "")
-          : "";
-        headers.push(text || utils.encode_col(c));
-      }
-      const data = utils.sheet_to_json<
-        Record<string, string>
-      >(sheet, {
-        header: headers,
-        range: {
-          s: { r: range.s.r + 1, c: range.s.c },
-          e: { r: range.e.r, c: range.e.c },
-        },
-        raw: false,
-        defval: "",
-        blankrows: false,
-      });
-      setAppData("xlsxData", { file, headers, data });
-    },
-  );
-
   const availableExportNames = createMemo(() => {
     return [
       { name: "默认（索引）", value: "default" },
@@ -325,7 +294,7 @@ export default function useAppViewModel() {
     async (startIndex?: number, endIndex?: number) => {
       const GEN_LIMIT = 4;
       const WRITE_LIMIT = 4;
-      setOpen(true);
+      setOpenLogger(true);
       const pdfFile = appData.pdfData?.file;
       const dirHandle = appData.workDir;
       let data = appData.xlsxData?.data;
@@ -442,16 +411,79 @@ export default function useAppViewModel() {
     },
   );
 
+  const processXlsx = loadingWrapper(
+    async (xlsx: File | Blob) => {
+      const ab = await xlsx.arrayBuffer();
+      const workbook = read(ab);
+      const sheetName = workbook.SheetNames[0];
+      const sheet = workbook.Sheets[sheetName];
+      const range = utils.decode_range(
+        sheet["!ref"] ?? "A1",
+      );
+      const headers: string[] = [];
+      for (let c = range.s.c; c <= range.e.c; c++) {
+        const addr = utils.encode_cell({ r: range.s.r, c });
+        const cell = sheet[addr];
+        const text = cell
+          ? (utils.format_cell(cell) ??
+            (cell as any).v ??
+            "")
+          : "";
+        headers.push(text || utils.encode_col(c));
+      }
+      const data = utils.sheet_to_json<
+        Record<string, string>
+      >(sheet, {
+        header: headers,
+        range: {
+          s: { r: range.s.r + 1, c: range.s.c },
+          e: { r: range.e.r, c: range.e.c },
+        },
+        raw: false,
+        defval: "",
+        blankrows: false,
+      });
+      setAppData("xlsxData", { file: xlsx, headers, data });
+    },
+  );
+
+  const onXlsxUpload = loadingWrapper(
+    async (
+      e: Event & {
+        currentTarget: HTMLInputElement;
+        target: HTMLInputElement;
+      },
+    ) => {
+      const file = e.currentTarget.files?.item(0);
+      if (!file) return;
+      await processXlsx(file);
+    },
+  );
+
+  const processPdf = loadingWrapper(
+    async (pdf: File | Blob) => {
+      try {
+        const pdfDoc = await PDFDocument.load(
+          await pdf.arrayBuffer(),
+        );
+        setAppData("pdfData", { file: pdf, doc: pdfDoc });
+      } catch (err) {
+        setError(
+          err instanceof Error
+            ? err.message
+            : "unknown error",
+        );
+      }
+    },
+  );
+
   const onPdfUpload = loadingWrapper(
     async (
       e: Event & { currentTarget: HTMLInputElement },
     ) => {
       const file = e.currentTarget.files?.item(0);
       if (!file) return;
-      const pdfDoc = await PDFDocument.load(
-        await file.arrayBuffer(),
-      );
-      setAppData("pdfData", { file, doc: pdfDoc });
+      await processPdf(file);
     },
   );
 
@@ -518,6 +550,30 @@ export default function useAppViewModel() {
       }
     },
   );
+  if (import.meta.env.DEV)
+    onMount(async () => {
+      try {
+        if (appData.pdfData) return;
+        const url = `${import.meta.env.BASE_URL}EDIT%20OoPdfFormExample.pdf`;
+        const res = await fetch(url);
+        if (!res.ok) return;
+        const blob = await res.blob();
+        const file = new File(
+          [blob],
+          "EDIT OoPdfFormExample.pdf",
+          {
+            type: "application/pdf",
+          },
+        );
+        await processPdf(file);
+      } catch (err) {
+        setError(
+          err instanceof Error
+            ? err.message
+            : "unknown error",
+        );
+      }
+    });
 
   return {
     appData,
@@ -530,10 +586,12 @@ export default function useAppViewModel() {
     setOption,
     genStats,
     resetGenStats,
-    open,
-    setOpen,
+    openLogger,
+    setOpenLogger,
     handleGenerate,
+    processXlsx,
     onXlsxUpload,
+    processPdf,
     onPdfUpload,
     onSelectWorkDir,
     onDropWorkDir,

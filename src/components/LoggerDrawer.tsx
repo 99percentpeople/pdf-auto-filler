@@ -56,9 +56,6 @@ export default function LoggerDrawer(props: {
     formatDuration(Math.max((props.stats.endAt ?? now()) - props.stats.startAt, 0));
   return (
     <Drawer open={props.open} onOpenChange={props.setOpen}>
-      <DrawerTrigger as={Button} variant="outline" class="max-w-xs">
-        日志
-      </DrawerTrigger>
       <DrawerContent class="container mx-auto flex h-2/3 flex-col">
         <DrawerHeader>
           <div class="flex w-full items-center justify-between">

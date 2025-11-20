@@ -18,13 +18,13 @@ export type AppOptions = {
 };
 
 export type XlsxData = {
-  file: File;
+  file: File | Blob;
   headers: string[];
   data: Record<string, string>[];
 };
 
 export type PdfData = {
-  file: File;
+  file: File | Blob;
   doc: PDFDocument;
 };
 
